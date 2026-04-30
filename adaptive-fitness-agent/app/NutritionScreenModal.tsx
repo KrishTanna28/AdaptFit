@@ -192,7 +192,7 @@ export default function NutritionScreenModal({ controller }: NutritionScreenModa
                                 <X size={18} color={appTheme.colors.text} strokeWidth={2.2} />
                             </Pressable>
                         </View>
-                        <Text style={styles.hintText}>Meal: {MEAL_LABELS[selectedMeal]}</Text>                        <Text style={styles.hintText}>Meal: {MEAL_LABELS[selectedMeal]}</Text>
+                        <Text style={styles.hintText}>Meal: {MEAL_LABELS[selectedMeal]}</Text>
 
                         <Text style={styles.fieldLabel}>Entry type</Text>
                         <View style={styles.modeRow}>

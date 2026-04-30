@@ -7,6 +7,12 @@
       "@react-native-google-signin/google-signin",
       "expo-health-connect",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Adaptive Fitness Agent to use the camera for workout form checks."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {
@@ -16,6 +22,7 @@
           }
         }
       ],
+      "expo-document-picker",
       "@react-native-community/datetimepicker"
     ],
     "version": "1.0.0",
@@ -31,7 +38,9 @@
     "ios": {
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "NSMotionUsageDescription": "This app uses motion data to count your steps in real time."
+        "NSMotionUsageDescription": "This app uses motion data to count your steps in real time.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone so you can dictate messages to your AI coach.",
+        "NSCameraUsageDescription": "This app uses the camera to analyze workout form during form checks."
       },
       "supportsTablet": true,
       "bundleIdentifier": "com.krish.adaptivefitnessagent"
@@ -40,7 +49,9 @@
       "package": "com.krish.adaptivefitnessagent",
       "permissions": [
         "android.permission.ACTIVITY_RECOGNITION",
-        "android.permission.health.READ_STEPS"
+        "android.permission.health.READ_STEPS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

@@ -72,6 +72,18 @@ const friendlyErrorMap: Array<{
     message: "Too many attempts were made. Please wait a moment and try again.",
   },
   {
+    match:
+      /denied access|permission[_\s-]?denied|contact support|forbidden|status:\s*403|api has not been used|disabled/i,
+    message:
+      "This AI provider project is blocked. Verify Vertex IAM permissions and billing for the configured service account.",
+  },
+  {
+    match:
+      /unable to authenticate your request|vertex-sdk-api-key-not-supported|no credentials|could not refresh access token/i,
+    message:
+      "AI provider authentication failed. In nutrition-proxy/.env, set VERTEX_PROJECT_ID, VERTEX_CLIENT_EMAIL, and VERTEX_PRIVATE_KEY (or FIREBASE_* as fallback), or configure GOOGLE_APPLICATION_CREDENTIALS.",
+  },
+  {
     match: /play services/i,
     message: "Google Play Services is not available on this device right now.",
   },

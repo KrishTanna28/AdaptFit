@@ -504,7 +504,7 @@ export default function ProfileScreen({ user }: ProfileScreenProps) {
     ];
 
     return (
-        <SafeAreaView style={globalStyles.screen}>
+        <SafeAreaView style={globalStyles.screen} edges={["top", "left", "right"]}>
             <ScrollView
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
@@ -546,7 +546,7 @@ export default function ProfileScreen({ user }: ProfileScreenProps) {
                                 </View>
                             ) : null}
                         </View>
-                        <Text style={styles.title}>Profile</Text>
+                        <Text style={styles.title}>{user.displayName}</Text>
                     </AppCard>
 
                     {shouldShowCompletionPrompt ? (

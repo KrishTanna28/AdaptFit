@@ -1,6 +1,8 @@
 import dotenv from "dotenv";
 import express from "express";
 import { createClient } from "redis";
+import { mountCoachRoutes } from "./coach/routes.js";
+import { mountFormAnalysisRoutes } from "./formAnalysis/routes.js";
 
 dotenv.config();
 
@@ -8,6 +10,8 @@ const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
 const USDA_API_KEY = (process.env.USDA_API_KEY ?? "").trim();
 const OFF_USER_AGENT = (process.env.OPENFOODFACTS_USER_AGENT ?? "AdaptiveFitnessAgent/1.0 (contact@example.com)").trim();
+
+app.use(express.json({ limit: "10mb" }));
 
 function toNumber(value, fallback = 0) {
   const n = typeof value === "number" ? value : Number(value);
@@ -507,6 +511,9 @@ app.get("/api/foods/search", async (req, res) => {
     });
   }
 });
+
+mountCoachRoutes(app);
+mountFormAnalysisRoutes(app);
 
 app.listen(PORT, () => {
   console.log(`Nutrition proxy running on port ${PORT}`);

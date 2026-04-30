@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { CalendarDays, ChevronDown, Plus } from "lucide-react-native";
+import { CalendarDays, Camera, ChevronDown, Plus } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { doc, getDoc } from "firebase/firestore";
 
@@ -30,6 +30,7 @@ import {
 import { appTheme } from "../theme/designSystem";
 import { globalStyles } from "../theme/globalStyles";
 import DatePickerModal from "./DatePickerModal";
+import WorkoutFormCheckModal from "./WorkoutFormCheckModal";
 import WorkoutEntryDetailModal from "./WorkoutEntryDetailModal";
 import WorkoutSearchModal, {
   type WorkoutDetectedType,
@@ -226,6 +227,7 @@ export default function WorkoutScreen() {
   const [profileForCalories, setProfileForCalories] = useState<UserMetProfile | null>(null);
 
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isFormCheckVisible, setIsFormCheckVisible] = useState(false);
   const [isSavingWorkout, setIsSavingWorkout] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<LoggedWorkoutEntry | null>(null);
@@ -772,7 +774,7 @@ export default function WorkoutScreen() {
   };
 
   return (
-    <SafeAreaView style={globalStyles.screen}>
+    <SafeAreaView style={globalStyles.screen} edges={["top", "left", "right"]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -785,6 +787,15 @@ export default function WorkoutScreen() {
                 <Text style={styles.title}>Workout</Text>
                 <Text style={styles.subtitle}>Daily workout log</Text>
               </View>
+
+              <Pressable
+                style={styles.heroActionButton}
+                onPress={() => setIsFormCheckVisible(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Open form check camera"
+              >
+                <Camera size={20} color={appTheme.colors.text} strokeWidth={2.2} />
+              </Pressable>
             </View>
 
             <View style={styles.datePickerBlock}>
@@ -886,6 +897,11 @@ export default function WorkoutScreen() {
       </ScrollView>
 
       <WorkoutSearchModal controller={modalController} />
+
+      <WorkoutFormCheckModal
+        visible={isFormCheckVisible}
+        onClose={() => setIsFormCheckVisible(false)}
+      />
 
       <WorkoutEntryDetailModal
         visible={isEntryDetailVisible}

@@ -23,6 +23,16 @@ export const styles = StyleSheet.create({
     flex: 1,
     gap: appTheme.spacing.xs,
   },
+  heroActionButton: {
+    width: 44,
+    height: 44,
+    borderRadius: appTheme.radii.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: appTheme.colors.inputBackground,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+  },
   title: {
     ...appTheme.typography.heading,
     color: appTheme.colors.text,
@@ -148,6 +158,11 @@ export const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
+  formCheckOverlayRoot: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20,
+    elevation: 20,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(32, 32, 34, 0.34)",
@@ -172,6 +187,16 @@ export const styles = StyleSheet.create({
   modalTitle: {
     ...appTheme.typography.subheading,
     color: appTheme.colors.text,
+  },
+  modalIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: appTheme.radii.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: appTheme.colors.card,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
   },
 
   fieldLabel: {
@@ -262,5 +287,77 @@ export const styles = StyleSheet.create({
     gap: appTheme.spacing.sm,
     marginTop: appTheme.spacing.sm,
     marginBottom: 4,
+  },
+  formCameraPreview: {
+    height: 360,
+    borderRadius: appTheme.radii.lg,
+    backgroundColor: appTheme.colors.text,
+    overflow: "hidden",
+    position: "relative",
+  },
+  formCameraPlaceholder: {
+    height: 360,
+    borderRadius: appTheme.radii.lg,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    backgroundColor: appTheme.colors.inputBackground,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: appTheme.spacing.lg,
+  },
+  formCameraNotice: {
+    position: "absolute",
+    left: appTheme.spacing.sm,
+    right: appTheme.spacing.sm,
+    bottom: appTheme.spacing.sm,
+    borderRadius: appTheme.radii.md,
+    backgroundColor: "rgba(255, 255, 255, 0.86)",
+    paddingHorizontal: appTheme.spacing.sm,
+    paddingVertical: appTheme.spacing.xs,
+  },
+  formCameraNoticeText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.text,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  formStatsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: appTheme.spacing.sm,
+  },
+  formErrorText: {
+    ...appTheme.typography.caption,
+    color: "#9F2F2F",
+    fontWeight: "700",
+  },
+  formSummaryBlock: {
+    borderRadius: appTheme.radii.md,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    backgroundColor: appTheme.colors.inputBackground,
+    padding: appTheme.spacing.md,
+    gap: 4,
+  },
+  formInsightRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: appTheme.spacing.sm,
+  },
+  formInsightIndex: {
+    width: 24,
+    height: 24,
+    borderRadius: appTheme.radii.pill,
+    backgroundColor: appTheme.colors.primary,
+    color: appTheme.colors.text,
+    textAlign: "center",
+    lineHeight: 24,
+    fontWeight: "800",
+  },
+  formInsightText: {
+    ...appTheme.typography.body,
+    color: appTheme.colors.text,
+    flex: 1,
   },
 });

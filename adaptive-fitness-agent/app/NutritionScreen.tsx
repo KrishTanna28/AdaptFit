@@ -852,7 +852,7 @@ export default function NutritionScreen() {
   };
 
   return (
-    <SafeAreaView style={globalStyles.screen}>
+    <SafeAreaView style={globalStyles.screen} edges={["top", "left", "right"]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}

@@ -2,48 +2,222 @@ import { StyleSheet } from "react-native";
 import { appTheme } from "../theme/designSystem";
 
 export const styles = StyleSheet.create({
-  scrollContent: {
-    paddingHorizontal: appTheme.spacing.lg,
-    paddingVertical: appTheme.spacing.xl,
+  screenContent: {
+    flex: 1,
+    paddingHorizontal: appTheme.spacing.md,
+    paddingTop: appTheme.spacing.md,
+    paddingBottom: appTheme.spacing.sm,
+    gap: appTheme.spacing.md,
   },
-  container: {
-    gap: appTheme.spacing.lg,
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: appTheme.spacing.sm,
   },
-  heroCard: {
-    gap: appTheme.spacing.xs,
+  headerTextWrap: {
+    flex: 1,
   },
   title: {
-    ...appTheme.typography.heading,
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "700",
     color: appTheme.colors.text,
   },
   subtitle: {
-    ...appTheme.typography.body,
-    color: appTheme.colors.mutedText,
-  },
-  sectionCard: {
-    gap: appTheme.spacing.md,
-  },
-  sectionTitle: {
-    ...appTheme.typography.subheading,
-    color: appTheme.colors.text,
-  },
-  insightItem: {
-    gap: appTheme.spacing.xs,
-    paddingBottom: appTheme.spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: appTheme.colors.border,
-  },
-  insightTitle: {
-    ...appTheme.typography.body,
-    color: appTheme.colors.text,
-    fontWeight: "700",
-  },
-  insightText: {
     ...appTheme.typography.caption,
     color: appTheme.colors.mutedText,
   },
-  logicText: {
+  voiceToggleButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: appTheme.spacing.sm,
+    paddingVertical: 8,
+    borderRadius: appTheme.radii.pill,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    backgroundColor: appTheme.colors.cardAlt,
+  },
+  voiceToggleText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.text,
+    fontWeight: "600",
+  },
+  signalsCard: {
+    backgroundColor: appTheme.colors.cardAlt,
+    borderRadius: appTheme.radii.md,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    paddingHorizontal: appTheme.spacing.sm,
+    paddingVertical: appTheme.spacing.sm,
+    gap: 4,
+  },
+  signalText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+  },
+  quickPromptRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  quickPromptChip: {
+    borderRadius: appTheme.radii.pill,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    backgroundColor: appTheme.colors.cardAlt,
+    paddingHorizontal: appTheme.spacing.md,
+    paddingVertical: 8,
+  },
+  quickPromptChipDisabled: {
+    opacity: 0.55,
+  },
+  quickPromptText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.text,
+    fontWeight: "600",
+  },
+  chatScroll: {
+    flex: 1,
+    backgroundColor: appTheme.colors.cardAlt,
+    borderRadius: appTheme.radii.lg,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+  },
+  chatContent: {
+    paddingHorizontal: appTheme.spacing.sm,
+    paddingVertical: appTheme.spacing.md,
+    gap: appTheme.spacing.md,
+  },
+  messageRow: {
+    width: "100%",
+  },
+  assistantRow: {
+    alignItems: "flex-start",
+  },
+  userRow: {
+    alignItems: "flex-end",
+  },
+  messageBubble: {
+    borderRadius: appTheme.radii.md,
+    paddingHorizontal: appTheme.spacing.md,
+    paddingVertical: appTheme.spacing.sm,
+    maxWidth: "94%",
+    gap: 8,
+  },
+  assistantBubble: {
+    backgroundColor: "#F7F7F8",
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+  },
+  userBubble: {
+    backgroundColor: "#ECECEC",
+    borderWidth: 1,
+    borderColor: "#DDDDDD",
+  },
+  messageText: {
     ...appTheme.typography.body,
     color: appTheme.colors.text,
+  },
+  speakMessageButton: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: appTheme.radii.pill,
+    backgroundColor: "rgba(0,0,0,0.04)",
+  },
+  speakMessageButtonText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+    fontWeight: "600",
+  },
+  thinkingBubble: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: appTheme.spacing.xs,
+  },
+  thinkingText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+  },
+  composerWrap: {
+    gap: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: appTheme.colors.border,
+  },
+  attachmentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 2,
+  },
+  attachmentChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: appTheme.radii.pill,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    backgroundColor: appTheme.colors.cardAlt,
+    paddingHorizontal: appTheme.spacing.sm,
+    paddingVertical: 6,
+  },
+  attachmentText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.text,
+    maxWidth: 220,
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    backgroundColor: appTheme.colors.cardAlt,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconButtonActive: {
+    backgroundColor: appTheme.colors.primary,
+  },
+  input: {
+    flex: 1,
+    minHeight: 36,
+    maxHeight: 120,
+    borderRadius: 16,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+    ...appTheme.typography.body,
+    color: appTheme.colors.text,
+    textAlignVertical: "top",
+  },
+  sendButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: appTheme.colors.primary,
+  },
+  sendButtonDisabled: {
+    backgroundColor: "#ECECEC",
+  },
+  statusText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+    paddingHorizontal: 4,
   },
 });

@@ -297,7 +297,7 @@ export default function HomeScreen({
   };
 
   return (
-    <SafeAreaView style={globalStyles.screen}>
+    <SafeAreaView style={globalStyles.screen} edges={["top", "left", "right"]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -375,7 +375,7 @@ export default function HomeScreen({
                     {isLoadingCaloriesIntake ? 0 : totalCaloriesBurned} kcal
                   </Text>
                 </View>
-                <Text style={styles.metricLabel}>Total burned (walk + workout)</Text>
+                <Text style={styles.metricLabel}>Calories burned</Text>
               </View>
 
               <View style={styles.metricItem}>
@@ -383,7 +383,7 @@ export default function HomeScreen({
                   <Pizza size={18} color={appTheme.colors.text} strokeWidth={2.2} />
                   <Text style={styles.metricValue}>{isLoadingCaloriesIntake ? 0 : caloriesIntake}</Text>
                 </View>
-                <Text style={styles.metricLabel}>Calories intake</Text>
+                <Text style={styles.metricLabel}>Calories consumed</Text>
               </View>
             </View>
           </AppCard>
