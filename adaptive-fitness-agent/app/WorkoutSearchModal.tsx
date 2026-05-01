@@ -8,12 +8,13 @@ import { styles } from "./WorkoutScreen.styles";
 import type { WorkoutCatalogItem } from "../services/workoutCatalogSearch";
 import type { MetIntensity } from "../services/workoutMetDataset";
 
-export type WorkoutInputMode = "cardio" | "strength";
+export type WorkoutInputMode = "cardio" | "strength" | "sports";
 export type WorkoutDetectedType = WorkoutInputMode | "other";
 
 type WorkoutSearchState = {
     query: string;
     isSearching: boolean;
+    hasSearched: boolean;
     results: WorkoutCatalogItem[];
     selectedWorkoutId: string | null;
     workoutMode: WorkoutInputMode;
@@ -134,7 +135,7 @@ export default function WorkoutSearchModal({ controller }: WorkoutSearchModalPro
                         <View style={styles.block}>
                             <AppTextField
                                 label="Workout search"
-                                placeholder="Example: squat, deadlift, running"
+                                placeholder="Example: squat, basketball, badminton"
                                 value={search.query}
                                 onChangeText={actions.setSearchQuery}
                                 autoCapitalize="none"
@@ -177,7 +178,7 @@ export default function WorkoutSearchModal({ controller }: WorkoutSearchModalPro
                                         );
                                     })}
                                 </View>
-                            ) : hasSearchText && !search.isSearching ? (
+                            ) : search.hasSearched && hasSearchText && !search.isSearching ? (
                                 <Text style={styles.emptyText}>No workouts found.</Text>
                             ) : null}
                         </View>
@@ -195,7 +196,7 @@ export default function WorkoutSearchModal({ controller }: WorkoutSearchModalPro
                                 <Text style={styles.fieldLabel}>
                                     Workout type: {detectedTypeLabel}
                                 </Text>
-                                {search.workoutMode === "cardio" ? (
+                                {search.workoutMode !== "strength" ? (
                                     <View style={styles.manualRow}>
                                         <View style={styles.manualCell}>
                                             <AppTextField

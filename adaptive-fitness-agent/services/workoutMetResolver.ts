@@ -107,6 +107,10 @@ function buildRowTokens(row: MetDatasetRow) {
 }
 
 function scoreRow(workout: WorkoutCatalogItem, row: MetDatasetRow, intensity: MetIntensity) {
+  if (workout.metRowId && workout.metRowId === row.id) {
+    return 1;
+  }
+
   const workoutTokens = buildWorkoutTokens(workout);
   const rowTokens = buildRowTokens(row);
 

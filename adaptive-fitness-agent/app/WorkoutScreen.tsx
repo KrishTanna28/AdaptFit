@@ -159,6 +159,14 @@ function inferWorkoutInputMode(workout: WorkoutCatalogItem): WorkoutAutoDetectio
     };
   }
 
+  if (categoryNormalized.includes("sport")) {
+    return {
+      detectedType: "sports",
+      mode: "sports",
+      hint: buildCategoryHint(workout),
+    };
+  }
+
   if (categoryNormalized.includes("cardio")) {
     return {
       detectedType: "cardio",
@@ -235,6 +243,7 @@ export default function WorkoutScreen() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [hasSearchedWorkouts, setHasSearchedWorkouts] = useState(false);
   const [searchResults, setSearchResults] = useState<WorkoutCatalogItem[]>([]);
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<string | null>(null);
 
@@ -345,6 +354,7 @@ export default function WorkoutScreen() {
     setEditingEntryId(null);
     setSearchQuery("");
     setIsSearching(false);
+    setHasSearchedWorkouts(false);
     setSearchResults([]);
     setSelectedWorkoutId(null);
     setWorkoutMode("cardio");
@@ -412,10 +422,11 @@ export default function WorkoutScreen() {
       muscles: [],
       equipment: [],
       aliases: [],
-      source: "WGER",
+      source: "Saved",
     };
 
     setSearchQuery(selectedEntry.workoutName);
+    setHasSearchedWorkouts(true);
     setSearchResults([selectedEntryAsCatalogItem]);
     setSelectedWorkoutId(selectedEntry.exerciseId);
     setWorkoutMode(selectedEntry.workoutMode);
@@ -489,6 +500,7 @@ export default function WorkoutScreen() {
     setIsSearching(true);
     try {
       const data = await searchWorkoutCatalog({ query, pageSize: 20 });
+      setHasSearchedWorkouts(true);
       setSearchResults(data);
       const firstResult = data[0] ?? null;
       setSelectedWorkoutId(firstResult?.id ?? null);
@@ -504,6 +516,14 @@ export default function WorkoutScreen() {
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handleSearchQueryChange = (value: string) => {
+    setSearchQuery(value);
+    setHasSearchedWorkouts(false);
+    setSearchResults([]);
+    setSelectedWorkoutId(null);
+    applyWorkoutAutoDetection(null);
   };
 
   const handleSelectWorkoutId = (id: string | null) => {
@@ -539,7 +559,7 @@ export default function WorkoutScreen() {
     let setupSec: number | null = null;
     let minSessionMin: number | null = null;
 
-    if (workoutMode === "cardio") {
+    if (workoutMode !== "strength") {
       const parsedDuration = toPositiveNumber(durationMinLabel);
       if (parsedDuration === null) {
         showAlert({
@@ -739,6 +759,7 @@ export default function WorkoutScreen() {
       search: {
         query: searchQuery,
         isSearching,
+        hasSearched: hasSearchedWorkouts,
         results: searchResults,
         selectedWorkoutId,
         workoutMode,
@@ -757,7 +778,7 @@ export default function WorkoutScreen() {
       submitLabel: editingEntryId ? "Update Workout" : "Add Workout",
     },
     actions: {
-      setSearchQuery,
+      setSearchQuery: handleSearchQueryChange,
       handleSearchWorkouts,
       setSelectedWorkoutId: handleSelectWorkoutId,
       setDurationMinLabel,

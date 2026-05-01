@@ -186,7 +186,7 @@ export default function WorkoutFormCheckModal({
         <Text style={styles.entryMeta}>
           {isRecording ? "Recording" : isAnalyzing ? "Analyzing" : "Ready"}
         </Text>
-        <Text style={styles.entryMeta}>Samples: {String(frameCount || framesRef.current.length)}</Text>
+        <Text style={styles.entryMeta}>Reps: {summary?.repsDetected}</Text>
       </View>
 
       {errorText ? <Text style={styles.formErrorText}>{errorText}</Text> : null}

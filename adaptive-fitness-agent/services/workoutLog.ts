@@ -12,7 +12,7 @@ import type { MetIntensity } from "./workoutMetDataset";
 import type { MappingSource } from "./workoutMetMapping";
 import {toText, toNumber, toPositiveNumber, toOptionalPositiveInt} from "./helperFunctions"
 
-export type LoggedWorkoutMode = "cardio" | "strength";
+export type LoggedWorkoutMode = "cardio" | "strength" | "sports";
 
 export type LoggedWorkoutEntry = {
   id: string;
@@ -71,7 +71,11 @@ function toOptionalPositiveNumber(value: unknown): number | null {
 }
 
 function normalizeWorkoutMode(raw: Partial<LoggedWorkoutEntry>): LoggedWorkoutMode {
-  if (raw.workoutMode === "cardio" || raw.workoutMode === "strength") {
+  if (
+    raw.workoutMode === "cardio" ||
+    raw.workoutMode === "strength" ||
+    raw.workoutMode === "sports"
+  ) {
     return raw.workoutMode;
   }
 

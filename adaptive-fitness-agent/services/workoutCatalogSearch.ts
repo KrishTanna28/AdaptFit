@@ -1,3 +1,8 @@
+import {
+  getMetDataset,
+  type MetDatasetRow,
+} from "./workoutMetDataset";
+
 export type WorkoutCatalogItem = {
   id: string;
   name: string;
@@ -7,8 +12,9 @@ export type WorkoutCatalogItem = {
   muscles: string[];
   equipment: string[];
   aliases: string[];
+  metRowId?: string;
   imageUrl?: string;
-  source: "WGER";
+  source: "WGER" | "MET" | "Saved";
 };
 
 type WgerListResponse<T> = {
@@ -56,7 +62,7 @@ const CACHE_TTL_MS = 30 * 60 * 1000;
 
 let catalogCache: WorkoutCatalogItem[] | null = null;
 let cacheAtMs = 0;
-let inFlightLoad: Promise<WorkoutCatalogItem[]> | null = null;
+let inFlightLoad: Promise<{ items: WorkoutCatalogItem[]; cacheable: boolean }> | null = null;
 
 function isAlphaNumericCode(code: number) {
   const isLower = code >= 97 && code <= 122;
@@ -157,6 +163,39 @@ function tokenize(value: string) {
   return uniqueTokens(normalized.split(" ").filter((token) => token.length > 1));
 }
 
+function cleanMetActivityName(value: string) {
+  return collapseSpaces(
+    value
+      .replace(/\(Taylor Code [^)]+\)/gi, "")
+      .replace(/\s+,/g, ",")
+      .replace(/,\s+/g, ", "),
+  );
+}
+
+function isSportRow(row: MetDatasetRow) {
+  return normalizeForSearch(row.category) === "sports";
+}
+
+function mapMetSport(row: MetDatasetRow): WorkoutCatalogItem | null {
+  if (!isSportRow(row)) return null;
+
+  const name = cleanMetActivityName(row.activity);
+  if (!name) return null;
+
+  return {
+    id: "met-" + row.id,
+    name,
+    categoryId: null,
+    category: row.category || "Sports",
+    description: row.activity,
+    muscles: [],
+    equipment: [],
+    aliases: row.aliases,
+    metRowId: row.id,
+    source: "MET",
+  };
+}
+
 function pickBestTranslation(translations: WgerTranslation[]) {
   for (const translation of translations) {
     if (translation.language === ENGLISH_LANGUAGE_ID && translation.name?.trim()) {
@@ -251,6 +290,46 @@ async function loadCatalogFromWger() {
   return Array.from(map.values());
 }
 
+async function loadSportsCatalogFromMetDataset() {
+  const dataset = await getMetDataset(false);
+  return dataset.rows
+    .map(mapMetSport)
+    .filter((item): item is WorkoutCatalogItem => item !== null);
+}
+
+function mergeCatalogItems(items: WorkoutCatalogItem[]) {
+  const map = new Map<string, WorkoutCatalogItem>();
+
+  for (const item of items) {
+    const key = item.source + ":" + item.id;
+    if (map.has(key)) continue;
+    map.set(key, item);
+  }
+
+  return Array.from(map.values());
+}
+
+async function loadCatalogFromSources() {
+  const sportsItems = await loadSportsCatalogFromMetDataset();
+
+  try {
+    const wgerItems = await loadCatalogFromWger();
+    return {
+      items: mergeCatalogItems([...wgerItems, ...sportsItems]),
+      cacheable: true,
+    };
+  } catch (error) {
+    if (sportsItems.length > 0) {
+      return {
+        items: sportsItems,
+        cacheable: false,
+      };
+    }
+
+    throw error;
+  }
+}
+
 async function getCatalog(forceRefresh = false) {
   const now = Date.now();
   const hasValidCache =
@@ -263,20 +342,24 @@ async function getCatalog(forceRefresh = false) {
   }
 
   if (inFlightLoad) {
-    return inFlightLoad;
+    const loaded = await inFlightLoad;
+    return loaded.items;
   }
 
-  inFlightLoad = loadCatalogFromWger()
-    .then((items) => {
-      catalogCache = items;
-      cacheAtMs = Date.now();
-      return items;
+  inFlightLoad = loadCatalogFromSources()
+    .then((loaded) => {
+      if (loaded.cacheable) {
+        catalogCache = loaded.items;
+        cacheAtMs = Date.now();
+      }
+      return loaded;
     })
     .finally(() => {
       inFlightLoad = null;
     });
 
-  return inFlightLoad;
+  const loaded = await inFlightLoad;
+  return loaded.items;
 }
 
 function scoreItem(item: WorkoutCatalogItem, queryNorm: string, queryTokens: string[]) {
