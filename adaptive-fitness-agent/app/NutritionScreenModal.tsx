@@ -432,9 +432,11 @@ export default function NutritionScreenModal({ controller }: NutritionScreenModa
                         </View>
 
                         <Text style={styles.hintText}>
-                            {selectedFood
-                                ? `${quantityLabel} serving${quantityValue > 1 ? "s" : ""} at ${roundOne(servingPerQuantity)} ${basisUnit} per serving = ${estimatedTotalAmount} ${basisUnit}`
-                                : "Select a food result to see estimated amount for your selected quantity."}
+                            {entryMode === "search"
+                                ? selectedFood
+                                    ? `${quantityLabel} serving${quantityValue > 1 ? "s" : ""} at ${roundOne(servingPerQuantity)} ${basisUnit} per serving = ${estimatedTotalAmount} ${basisUnit}`
+                                    : "Select a food result to see estimated amount for your selected quantity."
+                                : "Manual values are treated as one serving and can be edited before logging."}
                         </Text>
 
                         <View style={styles.modalActions}>

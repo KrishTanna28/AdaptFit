@@ -12,6 +12,12 @@ export type PoseFrameMetrics = {
   signals: Record<string, number>;
 };
 
+export type PoseTimelineSample = {
+  tSec: number;
+  confidence: number;
+  values: Record<string, number>;
+};
+
 export type PoseMetricSummary = {
   exerciseName: string;
   durationSec: number;
@@ -49,6 +55,21 @@ export type PoseMetricSummary = {
     torsoLeanDegMax: number | null;
     shoulderImbalanceAvg: number | null;
     hipImbalanceAvg: number | null;
+    shoulderTiltDegAvg: number | null;
+    shoulderTiltDegMax: number | null;
+    hipTiltDegAvg: number | null;
+    hipTiltDegMax: number | null;
+    leftKneeAngleAvg: number | null;
+    rightKneeAngleAvg: number | null;
+    kneeAngleDifferenceAvg: number | null;
+    leftElbowAngleAvg: number | null;
+    rightElbowAngleAvg: number | null;
+    elbowAngleDifferenceAvg: number | null;
+  };
+  movementDetail: {
+    baseline: PoseTimelineSample | null;
+    timeline: PoseTimelineSample[];
+    notableChanges: string[];
   };
   sampleCount: number;
 };
@@ -110,6 +131,22 @@ function midpoint(a: PoseLandmark | null, b: PoseLandmark | null) {
 function distance(a: PoseLandmark | null, b: PoseLandmark | null) {
   if (!visible(a) || !visible(b) || !a || !b) return null;
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function tiltDeg(a: PoseLandmark | null, b: PoseLandmark | null) {
+  if (!visible(a) || !visible(b) || !a || !b) return null;
+  const dx = Math.abs(a.x - b.x);
+  const dy = Math.abs(a.y - b.y);
+  if (dx === 0 && dy === 0) return null;
+  return Math.round((Math.atan2(dy, dx) * 180) / Math.PI);
+}
+
+function torsoLeanDeg(shoulderMid: { x: number; y: number } | null, hipMid: { x: number; y: number } | null) {
+  if (!shoulderMid || !hipMid) return null;
+  const dx = Math.abs(shoulderMid.x - hipMid.x);
+  const dy = Math.abs(shoulderMid.y - hipMid.y);
+  if (dx === 0 && dy === 0) return null;
+  return Math.round((Math.atan2(dx, dy) * 180) / Math.PI);
 }
 
 function round(value: number, digits = 2) {
@@ -223,6 +260,58 @@ function addConnectionSignals(
   });
 }
 
+function addPostureSignals(signals: Record<string, number>, landmarks: PoseLandmark[]) {
+  const leftShoulder = getLandmark(landmarks, 11);
+  const rightShoulder = getLandmark(landmarks, 12);
+  const leftElbow = getLandmark(landmarks, 13);
+  const rightElbow = getLandmark(landmarks, 14);
+  const leftWrist = getLandmark(landmarks, 15);
+  const rightWrist = getLandmark(landmarks, 16);
+  const leftHip = getLandmark(landmarks, 23);
+  const rightHip = getLandmark(landmarks, 24);
+  const leftKnee = getLandmark(landmarks, 25);
+  const rightKnee = getLandmark(landmarks, 26);
+  const leftAnkle = getLandmark(landmarks, 27);
+  const rightAnkle = getLandmark(landmarks, 28);
+
+  const shoulderMid = midpoint(leftShoulder, rightShoulder);
+  const hipMid = midpoint(leftHip, rightHip);
+  const leftKneeAngle = angleDeg(leftHip, leftKnee, leftAnkle);
+  const rightKneeAngle = angleDeg(rightHip, rightKnee, rightAnkle);
+  const leftElbowAngle = angleDeg(leftShoulder, leftElbow, leftWrist);
+  const rightElbowAngle = angleDeg(rightShoulder, rightElbow, rightWrist);
+
+  addSignal(signals, "posture.torsoLeanDeg", torsoLeanDeg(shoulderMid, hipMid));
+  addSignal(
+    signals,
+    "posture.shoulderImbalance",
+    visible(leftShoulder) && visible(rightShoulder) && leftShoulder && rightShoulder
+      ? Math.abs(leftShoulder.y - rightShoulder.y)
+      : null,
+  );
+  addSignal(
+    signals,
+    "posture.hipImbalance",
+    visible(leftHip) && visible(rightHip) && leftHip && rightHip ? Math.abs(leftHip.y - rightHip.y) : null,
+  );
+  addSignal(signals, "posture.shoulderTiltDeg", tiltDeg(leftShoulder, rightShoulder));
+  addSignal(signals, "posture.hipTiltDeg", tiltDeg(leftHip, rightHip));
+  addSignal(signals, "posture.leftKneeAngleDeg", leftKneeAngle);
+  addSignal(signals, "posture.rightKneeAngleDeg", rightKneeAngle);
+  addSignal(
+    signals,
+    "posture.kneeAngleDifference",
+    leftKneeAngle !== null && rightKneeAngle !== null ? Math.abs(leftKneeAngle - rightKneeAngle) : null,
+  );
+  addSignal(signals, "posture.leftElbowAngleDeg", leftElbowAngle);
+  addSignal(signals, "posture.rightElbowAngleDeg", rightElbowAngle);
+  addSignal(
+    signals,
+    "posture.elbowAngleDifference",
+    leftElbowAngle !== null && rightElbowAngle !== null ? Math.abs(leftElbowAngle - rightElbowAngle) : null,
+  );
+}
+
 export function extractPoseFrameMetrics(
   landmarks: PoseLandmark[],
   timestampMs = Date.now(),
@@ -236,6 +325,7 @@ export function extractPoseFrameMetrics(
   const connections = normalizeConnections(connectionsInput);
   addAllLandmarkSignals(signals, landmarks);
   addConnectionSignals(signals, landmarks, connections);
+  addPostureSignals(signals, landmarks);
 
   const center = averageLandmark(landmarks);
   addSignal(signals, "pose.center.x", center?.x ?? null);
@@ -377,6 +467,147 @@ function summarizeLandmarks(frames: PoseFrameMetrics[]) {
   };
 }
 
+const TIMELINE_SIGNAL_KEYS = [
+  "posture.torsoLeanDeg",
+  "posture.shoulderTiltDeg",
+  "posture.hipTiltDeg",
+  "posture.leftKneeAngleDeg",
+  "posture.rightKneeAngleDeg",
+  "posture.kneeAngleDifference",
+  "posture.leftElbowAngleDeg",
+  "posture.rightElbowAngleDeg",
+  "posture.elbowAngleDifference",
+  "pose.center.x",
+  "pose.center.y",
+] as const;
+
+const TIMELINE_SIGNAL_LABELS: Record<(typeof TIMELINE_SIGNAL_KEYS)[number], string> = {
+  "posture.torsoLeanDeg": "torso lean",
+  "posture.shoulderTiltDeg": "shoulder tilt",
+  "posture.hipTiltDeg": "hip tilt",
+  "posture.leftKneeAngleDeg": "left knee angle",
+  "posture.rightKneeAngleDeg": "right knee angle",
+  "posture.kneeAngleDifference": "knee angle difference",
+  "posture.leftElbowAngleDeg": "left elbow angle",
+  "posture.rightElbowAngleDeg": "right elbow angle",
+  "posture.elbowAngleDifference": "elbow angle difference",
+  "pose.center.x": "side-to-side body position",
+  "pose.center.y": "vertical body position",
+};
+
+function compactSignalName(key: string) {
+  return key
+    .replace(/^posture\./, "")
+    .replace(/^pose\.center\./, "center")
+    .replace(/Deg$/, "")
+    .replace(/\./g, "");
+}
+
+function snapshotFromFrame(frame: PoseFrameMetrics, startTimestampMs: number): PoseTimelineSample {
+  const values: Record<string, number> = {};
+
+  TIMELINE_SIGNAL_KEYS.forEach((key) => {
+    const value = frame.signals[key];
+    if (Number.isFinite(value)) {
+      values[compactSignalName(key)] = round(value, key.startsWith("pose.center.") ? 3 : 1);
+    }
+  });
+
+  return {
+    tSec: round((frame.timestampMs - startTimestampMs) / 1000, 1),
+    confidence: round(frame.confidence, 2),
+    values,
+  };
+}
+
+function sampleTimeline(frames: PoseFrameMetrics[], maxSamples = 24) {
+  if (!frames.length) {
+    return [];
+  }
+
+  if (frames.length <= maxSamples) {
+    return frames.map((frame) => snapshotFromFrame(frame, frames[0].timestampMs));
+  }
+
+  return Array.from({ length: maxSamples }, (_, index) => {
+    const sourceIndex = Math.round((index * (frames.length - 1)) / (maxSamples - 1));
+    return snapshotFromFrame(frames[sourceIndex], frames[0].timestampMs);
+  });
+}
+
+function firstUsableTimelineSample(timeline: PoseTimelineSample[]) {
+  return timeline.find((sample) => Object.keys(sample.values).length > 0) ?? null;
+}
+
+function valueFromSample(sample: PoseTimelineSample | null, key: string) {
+  if (!sample) return null;
+  const value = sample.values[compactSignalName(key)];
+  return Number.isFinite(value) ? value : null;
+}
+
+function describeChange(key: (typeof TIMELINE_SIGNAL_KEYS)[number], from: number, to: number) {
+  const label = TIMELINE_SIGNAL_LABELS[key];
+  const delta = round(to - from, 1);
+  const direction = delta > 0 ? "increased" : "decreased";
+  return `${label} ${direction} from ${String(from)} to ${String(to)} during the set.`;
+}
+
+function buildNotableChanges(timeline: PoseTimelineSample[]) {
+  const baseline = firstUsableTimelineSample(timeline);
+  const changes: Array<{ text: string; score: number }> = [];
+
+  TIMELINE_SIGNAL_KEYS.forEach((key) => {
+    const baselineValue = valueFromSample(baseline, key);
+    if (baselineValue === null) {
+      return;
+    }
+
+    const biggestChange = timeline
+      .map((sample) => valueFromSample(sample, key))
+      .filter((value): value is number => value !== null)
+      .map((value) => ({
+        value,
+        delta: Math.abs(value - baselineValue),
+      }))
+      .sort((a, b) => b.delta - a.delta)[0];
+
+    if (!biggestChange) {
+      return;
+    }
+
+    const delta = biggestChange.delta;
+    const threshold = key.startsWith("pose.center.") ? 0.08 : key.includes("Difference") ? 8 : 12;
+    if (delta >= threshold) {
+      changes.push({
+        text: describeChange(key, baselineValue, biggestChange.value),
+        score: delta / threshold,
+      });
+    }
+  });
+
+  const lowConfidenceSamples = timeline.filter((sample) => sample.confidence < 0.45).length;
+  if (timeline.length && lowConfidenceSamples / timeline.length >= 0.35) {
+    changes.push({
+      text: "Pose visibility dropped for much of the recording, so form feedback may be less certain.",
+      score: 1,
+    });
+  }
+
+  return changes
+    .sort((a, b) => b.score - a.score)
+    .map((change) => change.text)
+    .slice(0, 6);
+}
+
+function buildMovementDetail(frames: PoseFrameMetrics[]): PoseMetricSummary["movementDetail"] {
+  const timeline = sampleTimeline(frames);
+  return {
+    baseline: firstUsableTimelineSample(timeline),
+    timeline,
+    notableChanges: buildNotableChanges(timeline),
+  };
+}
+
 export function summarizePoseMetrics(
   exerciseName: string,
   frames: PoseFrameMetrics[],
@@ -435,11 +666,22 @@ export function summarizePoseMetrics(
     signals,
     landmarks: summarizeLandmarks(sortedFrames),
     posture: {
-      torsoLeanDegAvg: null,
-      torsoLeanDegMax: null,
-      shoulderImbalanceAvg: null,
-      hipImbalanceAvg: null,
+      torsoLeanDegAvg: postureValue("posture.torsoLeanDeg", "avg"),
+      torsoLeanDegMax: postureValue("posture.torsoLeanDeg", "max"),
+      shoulderImbalanceAvg: postureValue("posture.shoulderImbalance", "avg"),
+      hipImbalanceAvg: postureValue("posture.hipImbalance", "avg"),
+      shoulderTiltDegAvg: postureValue("posture.shoulderTiltDeg", "avg"),
+      shoulderTiltDegMax: postureValue("posture.shoulderTiltDeg", "max"),
+      hipTiltDegAvg: postureValue("posture.hipTiltDeg", "avg"),
+      hipTiltDegMax: postureValue("posture.hipTiltDeg", "max"),
+      leftKneeAngleAvg: postureValue("posture.leftKneeAngleDeg", "avg"),
+      rightKneeAngleAvg: postureValue("posture.rightKneeAngleDeg", "avg"),
+      kneeAngleDifferenceAvg: postureValue("posture.kneeAngleDifference", "avg"),
+      leftElbowAngleAvg: postureValue("posture.leftElbowAngleDeg", "avg"),
+      rightElbowAngleAvg: postureValue("posture.rightElbowAngleDeg", "avg"),
+      elbowAngleDifferenceAvg: postureValue("posture.elbowAngleDifference", "avg"),
     },
+    movementDetail: buildMovementDetail(sortedFrames),
     sampleCount: sortedFrames.length,
   };
 }

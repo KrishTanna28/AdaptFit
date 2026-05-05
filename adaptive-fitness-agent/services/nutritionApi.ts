@@ -36,6 +36,50 @@ type ProxySearchResponse = {
   items: FoodCatalogItem[];
 };
 
+export type PlateFoodAnalysisItem = {
+  label: string;
+  displayName: string;
+  confidence: number;
+  pixelArea: number;
+  areaRatio: number;
+  estimatedWeightGrams: number;
+  matchedFood: FoodCatalogItem | null;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber: number;
+  sodiumMg: number;
+  potassiumMg: number;
+  calciumMg: number;
+  ironMg: number;
+  vitaminCMg: number;
+};
+
+export type PlateFoodAnalysisResult = {
+  totalWeightGrams: number;
+  totalPixelArea: number;
+  items: PlateFoodAnalysisItem[];
+  totals: {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+    fiber: number;
+    sodiumMg: number;
+    potassiumMg: number;
+    calciumMg: number;
+    ironMg: number;
+    vitaminCMg: number;
+  };
+};
+
+type PlateFoodAnalysisRequest = {
+  imageBase64: string;
+  mimeType?: string;
+  totalWeightGrams: number;
+};
+
 type OpenFoodFactsProduct = {
   code?: string;
   product_name?: string;
@@ -190,6 +234,60 @@ function sanitizeItem(raw: FoodCatalogItem): FoodCatalogItem {
     imageUrl: raw.imageUrl ? String(raw.imageUrl) : undefined,
     nutrientBasis: raw.nutrientBasis === "100ml" ? "100ml" : "100g",
     servingSizeMl: raw.servingSizeMl ? toNumber(raw.servingSizeMl, 0) : undefined,
+  };
+}
+
+function sanitizeNullableFoodItem(raw: unknown): FoodCatalogItem | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  return sanitizeItem(raw as FoodCatalogItem);
+}
+
+function sanitizePlateAnalysisItem(raw: Partial<PlateFoodAnalysisItem>): PlateFoodAnalysisItem {
+  return {
+    label: String(raw.label ?? ""),
+    displayName: String(raw.displayName ?? raw.label ?? ""),
+    confidence: toNumber(raw.confidence, 0),
+    pixelArea: toNumber(raw.pixelArea, 0),
+    areaRatio: toNumber(raw.areaRatio, 0),
+    estimatedWeightGrams: toNumber(raw.estimatedWeightGrams, 0),
+    matchedFood: sanitizeNullableFoodItem(raw.matchedFood),
+    calories: toNumber(raw.calories, 0),
+    protein: toNumber(raw.protein, 0),
+    carbs: toNumber(raw.carbs, 0),
+    fat: toNumber(raw.fat, 0),
+    fiber: toNumber(raw.fiber, 0),
+    sodiumMg: toNumber(raw.sodiumMg, 0),
+    potassiumMg: toNumber(raw.potassiumMg, 0),
+    calciumMg: toNumber(raw.calciumMg, 0),
+    ironMg: toNumber(raw.ironMg, 0),
+    vitaminCMg: toNumber(raw.vitaminCMg, 0),
+  };
+}
+
+function sanitizePlateAnalysisResult(raw: Partial<PlateFoodAnalysisResult>): PlateFoodAnalysisResult {
+  const rawTotals = (raw.totals ?? {}) as Partial<PlateFoodAnalysisResult["totals"]>;
+
+  return {
+    totalWeightGrams: toNumber(raw.totalWeightGrams, 0),
+    totalPixelArea: toNumber(raw.totalPixelArea, 0),
+    items: Array.isArray(raw.items)
+      ? raw.items.map((item) => sanitizePlateAnalysisItem(item))
+      : [],
+    totals: {
+      calories: toNumber(rawTotals.calories, 0),
+      protein: toNumber(rawTotals.protein, 0),
+      carbs: toNumber(rawTotals.carbs, 0),
+      fat: toNumber(rawTotals.fat, 0),
+      fiber: toNumber(rawTotals.fiber, 0),
+      sodiumMg: toNumber(rawTotals.sodiumMg, 0),
+      potassiumMg: toNumber(rawTotals.potassiumMg, 0),
+      calciumMg: toNumber(rawTotals.calciumMg, 0),
+      ironMg: toNumber(rawTotals.ironMg, 0),
+      vitaminCMg: toNumber(rawTotals.vitaminCMg, 0),
+    },
   };
 }
 
@@ -377,4 +475,36 @@ export async function searchFoodCatalog(input: FoodSearchRequest): Promise<FoodC
   }
 
   return searchOpenFoodFactsDirect(query, pageSize);
+}
+
+export async function analyzePlateFoodImage(
+  input: PlateFoodAnalysisRequest,
+): Promise<PlateFoodAnalysisResult> {
+  if (!NUTRITION_API_BASE_URL) {
+    throw new Error("Nutrition proxy URL is not configured.");
+  }
+
+  const response = await fetch(`${NUTRITION_API_BASE_URL}/api/foods/plate/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      imageBase64: input.imageBase64,
+      mimeType: input.mimeType ?? "image/jpeg",
+      totalWeightGrams: input.totalWeightGrams,
+    }),
+  });
+
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const data = (await response.json()) as { message?: string; detail?: string };
+      detail = data.detail || data.message || "";
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail || `Plate analysis failed (${response.status}).`);
+  }
+
+  const data = (await response.json()) as Partial<PlateFoodAnalysisResult>;
+  return sanitizePlateAnalysisResult(data);
 }

@@ -5,7 +5,8 @@ import {
   Text,
   View,
 } from "react-native";
-import { CalendarDays, ChevronDown, Plus } from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
+import { CalendarDays, Camera, ChevronDown, Plus } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import NutritionScreenModal, {
   type NutritionScreenModalController,
@@ -18,9 +19,11 @@ import {
 } from "../components/ui/AppAlert";
 import { useAuthUser } from "../hooks/useAuthUser";
 import {
+  analyzePlateFoodImage,
   searchFoodCatalog,
   type FoodCatalogItem,
   type MealType,
+  type PlateFoodAnalysisResult,
 } from "../services/nutritionApi";
 import {
   loadDailyNutritionLog,
@@ -34,6 +37,7 @@ import { styles } from "./NutritionScreen.styles";
 import NutritionEntryDetailModal from "./NutritionEntryDetailModal";
 import { getTodayDateKey } from "../services/helperFunctions"
 import DatePickerModal from "./DatePickerModal";
+import PlateFoodCaptureModal from "./PlateFoodCaptureModal";
 
 const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snacks"];
 const MEAL_LABELS: Record<MealType, string> = {
@@ -83,6 +87,16 @@ type NutritionModalDraftState = {
   manual: NutritionManualState;
 };
 
+type PlateCaptureDraft = {
+  visible: boolean;
+  meal: MealType;
+  imageUri: string;
+  imageBase64: string;
+  mimeType: string;
+  totalWeightLabel: string;
+  isAnalyzing: boolean;
+};
+
 const initialNutritionSearchState: NutritionSearchState = {
   query: "",
   isSearching: false,
@@ -117,8 +131,25 @@ const initialNutritionModalDraftState: NutritionModalDraftState = {
   manual: initialNutritionManualState,
 };
 
+const initialPlateCaptureDraft: PlateCaptureDraft = {
+  visible: false,
+  meal: "breakfast",
+  imageUri: "",
+  imageBase64: "",
+  mimeType: "image/jpeg",
+  totalWeightLabel: "",
+  isAnalyzing: false,
+};
+
 type NutritionModalDraftAction =
   | { type: "OPEN_ADD"; meal: MealType }
+  | {
+    type: "OPEN_PLATE_MANUAL";
+    payload: {
+      selectedMeal: MealType;
+      manual: NutritionManualState;
+    };
+  }
   | {
     type: "OPEN_EDIT_MANUAL";
     payload: {
@@ -151,6 +182,16 @@ function nutritionModalDraftReducer(
         ...initialNutritionModalDraftState,
         isModalVisible: true,
         selectedMeal: action.meal,
+      };
+    case "OPEN_PLATE_MANUAL":
+      return {
+        ...initialNutritionModalDraftState,
+        isModalVisible: true,
+        selectedMeal: action.payload.selectedMeal,
+        entryMode: "manual",
+        quantity: 1,
+        quantityInput: "1",
+        manual: { ...action.payload.manual },
       };
     case "OPEN_EDIT_MANUAL":
       return {
@@ -214,6 +255,40 @@ function formatQuantity(value: number) {
 
 function roundOne(value: number) {
   return Math.round(value * 10) / 10;
+}
+
+function formatManualNumber(value: number) {
+  return formatQuantity(roundOne(Number.isFinite(value) ? value : 0));
+}
+
+function buildPlateManualState(result: PlateFoodAnalysisResult): NutritionManualState {
+  const names = result.items
+    .map((item) => {
+      const label = item.displayName || item.label;
+      if (!label) return "";
+      const grams = item.estimatedWeightGrams > 0
+        ? " " + formatQuantity(roundOne(item.estimatedWeightGrams)) + "g"
+        : "";
+      return label + grams;
+    })
+    .filter(Boolean);
+  const displayNames = names.slice(0, 4).join(", ");
+  const extraCount = Math.max(0, names.length - 4);
+  const suffix = extraCount > 0 ? " +" + String(extraCount) + " more" : "";
+
+  return {
+    name: displayNames ? "Plate: " + displayNames + suffix : "Plate scan",
+    calories: formatManualNumber(result.totals.calories),
+    protein: formatManualNumber(result.totals.protein),
+    carbs: formatManualNumber(result.totals.carbs),
+    fat: formatManualNumber(result.totals.fat),
+    fiber: formatManualNumber(result.totals.fiber),
+    sodiumMg: formatManualNumber(result.totals.sodiumMg),
+    potassiumMg: formatManualNumber(result.totals.potassiumMg),
+    calciumMg: formatManualNumber(result.totals.calciumMg),
+    ironMg: formatManualNumber(result.totals.ironMg),
+    vitaminCMg: formatManualNumber(result.totals.vitaminCMg),
+  };
 }
 
 function perServing(total: number, quantity: number) {
@@ -286,6 +361,7 @@ export default function NutritionScreen() {
     nutritionModalDraftReducer,
     initialNutritionModalDraftState,
   );
+  const [plateDraft, setPlateDraft] = useState<PlateCaptureDraft>(initialPlateCaptureDraft);
 
   const {
     isModalVisible,
@@ -593,6 +669,133 @@ export default function NutritionScreen() {
   const openAddModal = (meal: MealType) => {
     if (!ensureEditableDate()) return;
     dispatchModalDraft({ type: "OPEN_ADD", meal });
+  };
+
+  const closePlateCaptureModal = () => {
+    if (plateDraft.isAnalyzing) return;
+    setPlateDraft(initialPlateCaptureDraft);
+  };
+
+  const handlePlateWeightInputChange = (raw: string) => {
+    setPlateDraft((prev) => ({
+      ...prev,
+      totalWeightLabel: raw.replace(",", ".").replace(/[^0-9.]/g, ""),
+    }));
+  };
+
+  const handleCapturePlate = async (meal: MealType) => {
+    if (!ensureEditableDate()) return;
+
+    if (!user?.uid) {
+      showAlert({
+        title: "Sign-in required",
+        message: "Please sign in to log meals.",
+      });
+      return;
+    }
+
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (permission.status !== "granted") {
+      showAlert({
+        title: "Camera permission needed",
+        message: "Please allow camera access to capture your plate.",
+      });
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: false,
+      quality: 0.45,
+      base64: true,
+    });
+
+    if (result.canceled) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    if (!asset?.base64 || !asset.uri) {
+      showAlert({
+        title: "Unsupported image",
+        message: "We could not process this photo. Please try again.",
+      });
+      return;
+    }
+
+    setPlateDraft({
+      visible: true,
+      meal,
+      imageUri: asset.uri,
+      imageBase64: asset.base64,
+      mimeType: asset.mimeType ?? "image/jpeg",
+      totalWeightLabel: "",
+      isAnalyzing: false,
+    });
+  };
+
+  const handleRetakePlatePhoto = () => {
+    if (plateDraft.isAnalyzing) return;
+    const meal = plateDraft.meal;
+    setPlateDraft(initialPlateCaptureDraft);
+    void handleCapturePlate(meal);
+  };
+
+  const handleAnalyzePlate = async () => {
+    const totalWeightGrams = Number(plateDraft.totalWeightLabel);
+    if (!Number.isFinite(totalWeightGrams) || totalWeightGrams <= 0) {
+      showAlert({
+        title: "Add plate weight",
+        message: "Enter the total food weight in grams before analyzing.",
+      });
+      return;
+    }
+
+    if (!plateDraft.imageBase64) {
+      showAlert({
+        title: "Missing photo",
+        message: "Capture a plate photo before analyzing.",
+      });
+      return;
+    }
+
+    setPlateDraft((prev) => ({ ...prev, isAnalyzing: true }));
+
+    try {
+      const result = await analyzePlateFoodImage({
+        imageBase64: plateDraft.imageBase64,
+        mimeType: plateDraft.mimeType,
+        totalWeightGrams,
+      });
+
+      if (result.items.length === 0) {
+        showAlert({
+          title: "No foods detected",
+          message: "Try another photo with the plate clearly visible.",
+        });
+        return;
+      }
+
+      dispatchModalDraft({
+        type: "OPEN_PLATE_MANUAL",
+        payload: {
+          selectedMeal: plateDraft.meal,
+          manual: buildPlateManualState(result),
+        },
+      });
+      setPlateDraft(initialPlateCaptureDraft);
+    } catch (error) {
+      showAlert({
+        title: "Plate analysis failed",
+        message: getUserFriendlyErrorMessage(
+          error,
+          "Check that the plate-analysis service is running and try again.",
+        ),
+      });
+    } finally {
+      setPlateDraft((prev) => (
+        prev.visible ? { ...prev, isAnalyzing: false } : prev
+      ));
+    }
   };
 
   const handleSearchFoods = async () => {
@@ -952,15 +1155,29 @@ export default function NutritionScreen() {
                 <View style={styles.mealHeaderRow}>
                   <Text style={styles.sectionTitle}>{MEAL_LABELS[meal]}</Text>
 
-                  {canEditSelectedDate ? (<Pressable
-                    style={styles.addMealButton}
-                    onPress={() => openAddModal(meal)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Add ${MEAL_LABELS[meal]} entry`}
-                  >
-                    <Plus size={14} color={appTheme.colors.text} strokeWidth={2.4} />
-                    <Text style={styles.addMealText}>Add</Text>
-                  </Pressable>) : null}
+                  {canEditSelectedDate ? (
+                    <View style={styles.mealActionsRow}>
+                      <Pressable
+                        style={styles.addMealButton}
+                        onPress={() => handleCapturePlate(meal)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Capture ${MEAL_LABELS[meal]} plate`}
+                      >
+                        <Camera size={14} color={appTheme.colors.text} strokeWidth={2.4} />
+                        <Text style={styles.addMealText}>Photo</Text>
+                      </Pressable>
+
+                      <Pressable
+                        style={styles.addMealButton}
+                        onPress={() => openAddModal(meal)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Add ${MEAL_LABELS[meal]} entry`}
+                      >
+                        <Plus size={14} color={appTheme.colors.text} strokeWidth={2.4} />
+                        <Text style={styles.addMealText}>Add</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
                 </View>
 
                 {mealEntries.length === 0 ? (
@@ -1004,6 +1221,16 @@ export default function NutritionScreen() {
         selectedDateKey={selectedDateKey}
         onSelectDate={setSelectedDateKey}
         onClose={() => setIsDatePickerVisible(false)}
+      />
+      <PlateFoodCaptureModal
+        visible={plateDraft.visible}
+        imageUri={plateDraft.imageUri}
+        totalWeightLabel={plateDraft.totalWeightLabel}
+        isAnalyzing={plateDraft.isAnalyzing}
+        onChangeTotalWeight={handlePlateWeightInputChange}
+        onAnalyze={handleAnalyzePlate}
+        onRetake={handleRetakePlatePhoto}
+        onClose={closePlateCaptureModal}
       />
       <NutritionScreenModal controller={nutritionModalController} />
       <NutritionEntryDetailModal 

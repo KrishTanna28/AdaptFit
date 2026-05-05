@@ -83,6 +83,11 @@ export const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: appTheme.spacing.md,
   },
+  mealActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: appTheme.spacing.sm,
+  },
   addMealButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -98,6 +103,12 @@ export const styles = StyleSheet.create({
     ...appTheme.typography.caption,
     color: appTheme.colors.text,
     fontWeight: "700",
+  },
+  platePreviewImage: {
+    width: "100%",
+    aspectRatio: 4 / 3,
+    borderRadius: appTheme.radii.md,
+    backgroundColor: appTheme.colors.inputBackground,
   },
 
   entriesList: {

@@ -183,6 +183,7 @@ export const styles = StyleSheet.create({
   modalContent: {
     padding: appTheme.spacing.lg,
     gap: appTheme.spacing.md,
+    flexShrink: 1,
   },
   modalTitle: {
     ...appTheme.typography.subheading,
@@ -339,6 +340,13 @@ export const styles = StyleSheet.create({
     backgroundColor: appTheme.colors.inputBackground,
     padding: appTheme.spacing.md,
     gap: 4,
+  },
+  formInsightsScroll: {
+    flexShrink: 1,
+  },
+  formInsightsContent: {
+    gap: appTheme.spacing.sm,
+    paddingBottom: appTheme.spacing.sm,
   },
   formInsightRow: {
     flexDirection: "row",

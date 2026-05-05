@@ -5,7 +5,7 @@ import { generateFormAnalysisResponse } from "../coach/geminiClient.js";
 import { buildFormAnalysisPrompt } from "./prompt.js";
 
 const MAX_EXERCISE_NAME_LENGTH = 80;
-const MAX_SUMMARY_JSON_LENGTH = 50000;
+const MAX_SUMMARY_JSON_LENGTH = 90000;
 
 const PROVIDER_ACCESS_DENIED_PATTERN =
   /denied access|permission[_\s-]?denied|api key not valid|insufficient permissions|contact support|forbidden|status:\s*403|api has not been used|disabled/i;
@@ -74,8 +74,7 @@ function normalizeInsights(value) {
 
   return value
     .map((item) => cleanInsightText(item))
-    .filter(Boolean)
-    .slice(0, 4);
+    .filter(Boolean);
 }
 
 function cleanInsightText(value) {
@@ -97,8 +96,7 @@ function parseInsights(text) {
       .map((line) => cleanInsightText(line))
       .filter((line) => !/^[\]{}]+$/.test(line))
       .filter((line) => !/^"?insights"?\s*:\s*\[?$/i.test(line))
-      .filter(Boolean)
-      .slice(0, 4);
+      .filter(Boolean);
   }
 }
 

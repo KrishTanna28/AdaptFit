@@ -1,5 +1,5 @@
 import React from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { X } from "lucide-react-native";
 
 import AppButton from "../components/ui/AppButton";
@@ -235,15 +235,19 @@ export default function WorkoutFormCheckModal({
 
         {errorText ? <Text style={styles.formErrorText}>{errorText}</Text> : null}
 
-        <View style={styles.block}>
+        <ScrollView
+          style={styles.formInsightsScroll}
+          contentContainerStyle={styles.formInsightsContent}
+          showsVerticalScrollIndicator
+        >
           <Text style={styles.sectionTitle}>Coach insights</Text>
-          {insights.slice(0, 4).map((insight, index) => (
+          {insights.map((insight, index) => (
             <View key={String(index)} style={styles.formInsightRow}>
               <Text style={styles.formInsightIndex}>{String(index + 1)}</Text>
               <Text style={styles.formInsightText}>{insight}</Text>
             </View>
           ))}
-        </View>
+        </ScrollView>
 
         <View style={styles.modalActions}>
           <AppButton title="Done" onPress={handleClose} />

@@ -54,12 +54,11 @@ export function buildCoachSystemPrompt() {
     "Do not claim medical authority. For injuries, conditions, pain, or symptoms, advise consulting a qualified professional.",
     "Never provide dangerous or extreme advice (starvation, overtraining, unsafe supplements).",
     "Response style rules:",
-    "1) Start with one short direct answer.",
-    "2) Provide 3-5 actionable items for today using plain numbered lines (1., 2., 3.).",
-    "3) End with one motivating line.",
-    "4) Keep answer practical and complete.",
-    "5) Do not use markdown formatting or special markers like *, **, #, or backticks.",
-    "6) Ensure the response does not end mid-sentence.",
+    "1) Start with a direct answer.",
+    "2) Provide as many actionable items as are useful using plain numbered lines (1., 2., 3.).",
+    "3) Keep answer practical and complete.",
+    "4) Do not use markdown formatting or special markers like *, **, #, or backticks.",
+    "5) Ensure the response does not end mid-sentence.",
   ].join("\n");
 }
 

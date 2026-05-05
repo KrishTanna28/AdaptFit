@@ -3,7 +3,6 @@ import { VertexAI } from "@google-cloud/vertexai";
 const DEFAULT_MODEL = "gemini-2.5-flash";
 const DEFAULT_LOCATION = "us-central1";
 const MAX_HISTORY_MESSAGES = 12;
-const DEFAULT_MAX_OUTPUT_TOKENS = 10000;
 
 function getApiKeyFromEnv() {
   const preferred = String(process.env.GEMINI_APPI_KEY ?? "").trim();
@@ -51,13 +50,6 @@ function resolveLocation() {
 
 function resolveModel() {
   return String(process.env.GEMINI_MODEL ?? DEFAULT_MODEL).trim() || DEFAULT_MODEL;
-}
-
-function resolveMaxOutputTokens() {
-  const maxOutputTokensRaw = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS ?? DEFAULT_MAX_OUTPUT_TOKENS);
-  return Number.isFinite(maxOutputTokensRaw)
-    ? Math.max(2048, Math.min(8192, Math.floor(maxOutputTokensRaw)))
-    : DEFAULT_MAX_OUTPUT_TOKENS;
 }
 
 function createVertexModel() {
@@ -167,21 +159,12 @@ function toErrorMessage(error) {
 }
 
 async function requestVertexContent(body) {
-  const config = {
-    maxOutputTokens: resolveMaxOutputTokens(),
-  };
   const { model, generativeModel } = createVertexModel();
 
   try {
     const result = await generativeModel.generateContent({
       ...body,
-      generationConfig: {
-        ...body.generationConfig,
-        maxOutputTokens:
-          Number(body?.generationConfig?.maxOutputTokens ?? 0) > 0
-            ? Number(body.generationConfig.maxOutputTokens)
-            : config.maxOutputTokens,
-      },
+      generationConfig: body.generationConfig ?? {},
     });
 
     return {
@@ -209,7 +192,6 @@ export async function generateCoachResponse(input) {
     generationConfig: {
       temperature: 0.35,
       topP: 0.9,
-      maxOutputTokens: resolveMaxOutputTokens(),
     },
   };
 
@@ -233,7 +215,6 @@ export async function generateFormAnalysisResponse(input) {
     generationConfig: {
       temperature: 0.25,
       topP: 0.85,
-      maxOutputTokens: 700,
     },
   };
 
@@ -276,7 +257,6 @@ export async function transcribeAudioWithVertex(input) {
     generationConfig: {
       temperature: 0,
       topP: 0.9,
-      maxOutputTokens: 1200,
     },
   };
 

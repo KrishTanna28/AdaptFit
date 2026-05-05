@@ -9,7 +9,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Adaptive Fitness Agent to use the camera for workout form checks."
+          "cameraPermission": "Allow Adaptive Fitness Agent to use the camera for workout form checks and plate food logging."
         }
       ],
       [
@@ -40,7 +40,7 @@
       "infoPlist": {
         "NSMotionUsageDescription": "This app uses motion data to count your steps in real time.",
         "NSMicrophoneUsageDescription": "This app uses the microphone so you can dictate messages to your AI coach.",
-        "NSCameraUsageDescription": "This app uses the camera to analyze workout form during form checks."
+        "NSCameraUsageDescription": "This app uses the camera to analyze workout form and capture plate photos for food logging."
       },
       "supportsTablet": true,
       "bundleIdentifier": "com.krish.adaptivefitnessagent"
