@@ -1,17 +1,18 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import type { User } from "firebase/auth/react-native";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
-import { Droplets, Pizza, Flame, House, Lightbulb, User as UserIcon } from "lucide-react-native";
+import { Pizza, Flame, House, Lightbulb, User as UserIcon } from "lucide-react-native";
 
 import AICoachScreen from "./AICoachScreen";
 import HomeScreen from "./HomeScreen";
-import LifestyleScreen from "./LifestyleScreen";
 import NutritionScreen from "./NutritionScreen";
 import ProfileScreen from "./ProfileScreen";
 import WorkoutScreen from "./WorkoutScreen";
 import useLiveStepCounter, { DAILY_STEP_GOAL } from "../hooks/useLiveStepCounter";
 import { db } from "../services/firebase";
+import { getTodayDateKey } from "../services/helperFunctions";
+import { upsertDailyStepLog } from "../services/stepLog";
 import { appTheme } from "../theme/designSystem";
 
 export type HomeTabParamList = {
@@ -19,7 +20,6 @@ export type HomeTabParamList = {
   Activity: undefined;
   Workout: undefined;
   Diet: undefined;
-  Lifestyle: undefined;
   Coach: undefined;
   Profile: undefined;
 };
@@ -31,6 +31,8 @@ type HomeTabsProps = {
 const MIN_STEP_GOAL = 100;
 const STEP_GOAL_INCREMENT = 100;
 const FIRESTORE_SAVE_TIMEOUT_MS = 8000;
+const STEP_SAVE_INTERVAL_MS = 5 * 60 * 1000;
+const STEP_SAVE_MIN_DELTA = 200;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
   return Promise.race<T>([
@@ -56,6 +58,7 @@ const Tab = createBottomTabNavigator<HomeTabParamList>();
 export default function HomeTabs({ user }: HomeTabsProps) {
   const [dailyStepGoal, setDailyStepGoal] = useState(DAILY_STEP_GOAL);
   const [isSavingStepGoal, setIsSavingStepGoal] = useState(false);
+  const lastStepSaveRef = useRef({ dateKey: "", steps: -1, savedAt: 0 });
 
   useEffect(() => {
     let isMounted = true;
@@ -151,6 +154,52 @@ export default function HomeTabs({ user }: HomeTabsProps) {
 
   const liveStepCounter = useLiveStepCounter(dailyStepGoal);
 
+  const saveStepSnapshot = useCallback(() => {
+    if (liveStepCounter.isLoading) {
+      return;
+    }
+
+    const dateKey = getTodayDateKey();
+    const nowMs = Date.now();
+    const steps = Math.max(0, Math.round(liveStepCounter.stepsToday));
+    const goal = Math.max(0, Math.round(liveStepCounter.goal));
+    const last = lastStepSaveRef.current;
+    const dateChanged = Boolean(last.dateKey) && last.dateKey !== dateKey;
+    const stepsDelta = steps - Math.max(0, last.steps);
+    const shouldSave =
+      dateChanged ||
+      stepsDelta >= STEP_SAVE_MIN_DELTA ||
+      nowMs - last.savedAt >= STEP_SAVE_INTERVAL_MS;
+
+    if (!shouldSave) {
+      return;
+    }
+
+    lastStepSaveRef.current = { dateKey, steps, savedAt: nowMs };
+
+    upsertDailyStepLog(user.uid, dateKey, {
+      steps,
+      goal,
+      source: liveStepCounter.trackingSource,
+    }).catch(() => {
+      // Ignore background save failures.
+    });
+  }, [liveStepCounter.goal, liveStepCounter.isLoading, liveStepCounter.stepsToday, liveStepCounter.trackingSource, user.uid]);
+
+  useEffect(() => {
+    saveStepSnapshot();
+  }, [saveStepSnapshot]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      saveStepSnapshot();
+    }, STEP_SAVE_INTERVAL_MS);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [saveStepSnapshot]);
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -201,16 +250,6 @@ export default function HomeTabs({ user }: HomeTabsProps) {
         options={{
           tabBarIcon: ({ color, size }) => (
             <Pizza size={size} color={color} strokeWidth={2.2} />
-          ),
-        }}
-      />
-
-      <Tab.Screen
-        name="Lifestyle"
-        component={LifestyleScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Droplets size={size} color={color} strokeWidth={2.2} />
           ),
         }}
       />

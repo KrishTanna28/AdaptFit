@@ -273,8 +273,14 @@ export function mountCoachRoutes(app) {
         history,
       });
 
-      const workoutPlan = parseWorkoutPlan(coachResponse.text);
-      const replyText = workoutPlan ? buildWorkoutReply(workoutPlan) : coachResponse.text;
+      let workoutPlan = parseWorkoutPlan(coachResponse.text);
+      let replyText = workoutPlan ? buildWorkoutReply(workoutPlan) : coachResponse.text;
+      const workoutGoalAchievedToday = Boolean(context?.recency?.workoutGoalAchievedToday);
+
+      if (workoutPlan && workoutGoalAchievedToday) {
+        workoutPlan = null;
+        replyText = "You already hit today's workout goal. Prioritize recovery or mobility today, and we can plan the next session when you're ready.";
+      }
 
       await appendConversationMessage(db, uid, conversationId, {
         role: "user",

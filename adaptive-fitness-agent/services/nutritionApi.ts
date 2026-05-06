@@ -40,27 +40,6 @@ type ProxyBarcodeResponse = {
   item?: FoodCatalogItem;
 };
 
-export type RecipeNutritionResult = {
-  title: string;
-  sourceUrl: string;
-  servings: number | null;
-  servingBasis: string;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-  fiber: number;
-  sodiumMg: number;
-  potassiumMg: number;
-  calciumMg: number;
-  ironMg: number;
-  vitaminCMg: number;
-};
-
-type ProxyRecipeResponse = {
-  recipe?: RecipeNutritionResult;
-};
-
 export type PlateFoodAnalysisItem = {
   label: string;
   displayName: string;
@@ -700,64 +679,6 @@ export async function getFoodByBarcode(barcodeValue: string): Promise<FoodCatalo
   }
 
   return getFoodByBarcodeDirect(barcode);
-}
-
-function sanitizeRecipe(raw: RecipeNutritionResult): RecipeNutritionResult {
-  return {
-    title: String(raw.title ?? "").trim() || "Recipe",
-    sourceUrl: String(raw.sourceUrl ?? "").trim(),
-    servings:
-      typeof raw.servings === "number" && Number.isFinite(raw.servings) && raw.servings > 0
-        ? raw.servings
-        : null,
-    servingBasis: String(raw.servingBasis ?? "per-serving-schema"),
-    calories: toNumber(raw.calories, 0),
-    protein: toNumber(raw.protein, 0),
-    carbs: toNumber(raw.carbs, 0),
-    fat: toNumber(raw.fat, 0),
-    fiber: toNumber(raw.fiber, 0),
-    sodiumMg: toNumber(raw.sodiumMg, 0),
-    potassiumMg: toNumber(raw.potassiumMg, 0),
-    calciumMg: toNumber(raw.calciumMg, 0),
-    ironMg: toNumber(raw.ironMg, 0),
-    vitaminCMg: toNumber(raw.vitaminCMg, 0),
-  };
-}
-
-export async function parseRecipeUrl(input: {
-  url: string;
-  servings?: number | null;
-}): Promise<RecipeNutritionResult> {
-  if (!NUTRITION_API_BASE_URL) {
-    throw new Error("Nutrition proxy URL is required for recipe parsing.");
-  }
-
-  const response = await fetch(`${NUTRITION_API_BASE_URL}/api/recipes/parse`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      url: input.url.trim(),
-      servings: input.servings ?? undefined,
-    }),
-  });
-
-  if (!response.ok) {
-    let detail = "";
-    try {
-      const data = (await response.json()) as { message?: string; detail?: string };
-      detail = data.detail || data.message || "";
-    } catch {
-      detail = "";
-    }
-    throw new Error(detail || `Recipe parse failed (${response.status}).`);
-  }
-
-  const data = (await response.json()) as ProxyRecipeResponse;
-  if (!data.recipe) {
-    throw new Error("Recipe parser returned no nutrition data.");
-  }
-
-  return sanitizeRecipe(data.recipe);
 }
 
 export async function analyzePlateFoodImage(

@@ -95,9 +95,9 @@ export default function WorkoutSearchModal({ controller }: WorkoutSearchModalPro
                     }}
                 />
 
-                <View style={styles.modalCard}>
+                <View style={styles.modalCardWrap}>
                     <ScrollView
-                        style={styles.modalScroll}
+                        style={styles.modalCard}
                         contentContainerStyle={styles.modalContent}
                         keyboardShouldPersistTaps="handled"
                         showsVerticalScrollIndicator={false}

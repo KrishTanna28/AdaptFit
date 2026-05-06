@@ -33,6 +33,28 @@ export const styles = StyleSheet.create({
   metricsCard: {
     gap: appTheme.spacing.md,
   },
+  summaryHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: appTheme.spacing.sm,
+  },
+  streakPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: appTheme.spacing.sm,
+    paddingVertical: 4,
+    borderRadius: appTheme.radii.pill,
+    backgroundColor: appTheme.colors.cardAlt,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+  },
+  streakText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.text,
+    fontWeight: "700",
+  },
   metricsTitle: {
     ...appTheme.typography.subheading,
     color: appTheme.colors.text,
@@ -132,6 +154,69 @@ export const styles = StyleSheet.create({
     ...appTheme.typography.body,
     color: appTheme.colors.text,
   },
+  lifestyleRow: {
+    flexDirection: "row",
+    gap: appTheme.spacing.md,
+  },
+  lifestylePressable: {
+    flex: 1,
+  },
+  lifestyleCard: {
+    gap: appTheme.spacing.xs,
+  },
+  lifestyleHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: appTheme.spacing.xs,
+  },
+  lifestyleTitle: {
+    ...appTheme.typography.label,
+    color: appTheme.colors.mutedText,
+  },
+  lifestyleValue: {
+    ...appTheme.typography.subheading,
+    color: appTheme.colors.text,
+  },
+  lifestyleMeta: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+  },
+  trendCard: {
+    gap: appTheme.spacing.md,
+  },
+  trendHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: appTheme.spacing.sm,
+  },
+  trendTitle: {
+    ...appTheme.typography.subheading,
+    color: appTheme.colors.text,
+  },
+  trendMeta: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+  },
+  trendChartWrap: {
+    minHeight: 90,
+    width: "100%",
+    alignItems: "stretch",
+    justifyContent: "center",
+  },
+  trendLabelsRow: {
+    flexDirection: "row",
+    paddingTop: appTheme.spacing.xs,
+  },
+  trendLabel: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+    textAlign: "center",
+  },
+  emptyText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+  },
   heroCard: {
     gap: appTheme.spacing.sm,
   },
@@ -218,6 +303,93 @@ export const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
+  },
+  sheetCard: {
+    width: "100%",
+    borderRadius: appTheme.radii.lg,
+    backgroundColor: appTheme.colors.card,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    padding: appTheme.spacing.lg,
+    gap: appTheme.spacing.md,
+  },
+  sheetHeaderRow: {
+    gap: 4,
+  },
+  sheetTitle: {
+    ...appTheme.typography.subheading,
+    color: appTheme.colors.text,
+  },
+  sheetSubtitle: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+  },
+  sheetMetricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    rowGap: appTheme.spacing.md,
+    columnGap: appTheme.spacing.md,
+  },
+  sheetMetricItem: {
+    width: "47%",
+    gap: appTheme.spacing.xs,
+  },
+  sheetMetricValue: {
+    ...appTheme.typography.subheading,
+    color: appTheme.colors.text,
+  },
+  sheetMetricLabel: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+  },
+  quickButtonRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: appTheme.spacing.sm,
+  },
+  quickButton: {
+    borderRadius: appTheme.radii.pill,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    backgroundColor: appTheme.colors.inputBackground,
+    paddingHorizontal: appTheme.spacing.md,
+    paddingVertical: appTheme.spacing.xs,
+  },
+  quickButtonText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.text,
+    fontWeight: "700",
+  },
+  helperText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: appTheme.spacing.sm,
+  },
+  chip: {
+    minWidth: 42,
+    borderRadius: appTheme.radii.pill,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    backgroundColor: appTheme.colors.inputBackground,
+    paddingHorizontal: appTheme.spacing.md,
+    paddingVertical: appTheme.spacing.xs,
+    alignItems: "center",
+  },
+  chipActive: {
+    backgroundColor: appTheme.colors.card,
+    borderColor: appTheme.colors.secondary,
+  },
+  chipText: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+    fontWeight: "700",
+  },
+  chipTextActive: {
+    color: appTheme.colors.text,
   },
   goalModalCard: {
     width: "100%",

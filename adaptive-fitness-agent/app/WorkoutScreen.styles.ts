@@ -172,16 +172,15 @@ export const styles = StyleSheet.create({
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
   },
-  modalCard: {
+  modalCardWrap: {
     maxHeight: "88%",
+  },
+  modalCard: {
     borderRadius: appTheme.radii.lg,
     borderWidth: 1,
     borderColor: appTheme.colors.border,
     backgroundColor: appTheme.colors.cardAlt,
     overflow: "hidden",
-  },
-  modalScroll: {
-    maxHeight: "100%",
   },
   modalContent: {
     padding: appTheme.spacing.lg,

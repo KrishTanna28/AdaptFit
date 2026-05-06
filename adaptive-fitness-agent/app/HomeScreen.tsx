@@ -16,13 +16,29 @@ import {
   reauthenticateWithCredential,
   type User,
 } from "firebase/auth/react-native";
+import { doc, getDoc } from "firebase/firestore";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
-import { Pizza, Flame, Lightbulb, Target } from "lucide-react-native";
+import { Flame, Lightbulb, Droplets, Moon } from "lucide-react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { loadDailyNutritionLog } from "../services/nutritionLog";
-import { loadDailyWorkoutLog } from "../services/workoutLog";
+import { loadDailyWorkoutLog, type LoggedWorkoutEntry } from "../services/workoutLog";
 import { getTodayDateKey } from "@/services/helperFunctions";
-import { auth } from "../services/firebase";
+import { auth, db } from "../services/firebase";
+import {
+  calculateAdaptiveHydrationGoal,
+  EMPTY_RECOVERY,
+  EMPTY_WEATHER,
+  loadDailyLifestyleLog,
+  normalizeLifestyleLog,
+  upsertDailyLifestyleLog,
+  type DailyLifestyleLog,
+  type RecoveryLog,
+} from "../services/lifestyleLog";
+import {
+  buildDailyRanges,
+  loadStepsForRanges,
+  type StepHistoryPoint,
+} from "../services/stepHistory";
 import {
   getUserFriendlyErrorMessage,
   useAppAlert,
@@ -34,6 +50,7 @@ import AppTextField from "../components/ui/AppTextField";
 import type { LiveStepCounter } from "../hooks/useLiveStepCounter";
 import { appTheme } from "../theme/designSystem";
 import { globalStyles } from "../theme/globalStyles";
+import StepsHistoryModal, { StepBarChart } from "./StepsHistoryModal";
 import { styles } from "./HomeScreen.styles";
 
 type HomeScreenProps = {
@@ -48,12 +65,77 @@ const MAX_STEP_GOAL = 100000;
 const STEP_GOAL_INCREMENT = 100;
 const GOAL_ROW_HEIGHT = 44;
 const STEPS_PROGRESS_THUMB_WIDTH = 48;
+const QUICK_WATER_AMOUNTS = [250, 500, 750];
+const RATING_OPTIONS = [1, 2, 3, 4, 5];
+const STREAK_LOOKBACK_DAYS = 30;
+const STEP_TREND_DAYS = 7;
+const MINI_CHART_HEIGHT = 90;
+const MINI_CHART_SPACING = 22;
+const MINI_CHART_PADDING = 12;
 
 function normalizeGoalForPicker(goal: number) {
   return Math.min(
     MAX_STEP_GOAL,
     Math.max(MIN_STEP_GOAL, Math.round(goal / STEP_GOAL_INCREMENT) * STEP_GOAL_INCREMENT),
   );
+}
+
+function formatMl(value: number) {
+  return Math.round(value).toLocaleString() + " ml";
+}
+
+function formatNumberInput(value: number | null) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "";
+  }
+
+  if (Number.isInteger(value)) {
+    return String(value);
+  }
+
+  return value.toFixed(1).replace(/\.?0+$/, "");
+}
+
+function sanitizeDecimalInput(raw: string) {
+  const normalized = raw.replace(",", ".").replace(/[^0-9.]/g, "");
+  const firstDot = normalized.indexOf(".");
+  if (firstDot < 0) {
+    return normalized;
+  }
+  return normalized.slice(0, firstDot + 1) + normalized.slice(firstDot + 1).replace(/\./g, "");
+}
+
+function parseOptionalNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === ".") {
+    return null;
+  }
+
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseProfileWeight(rawProfile: unknown): number | null {
+  if (!rawProfile || typeof rawProfile !== "object") {
+    return null;
+  }
+
+  const value = Number((rawProfile as { weightKg?: unknown }).weightKg);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function buildRecentDateKeys(count: number, now = new Date()) {
+  const out: string[] = [];
+  const base = new Date(now);
+  base.setHours(0, 0, 0, 0);
+
+  for (let offset = 0; offset < count; offset += 1) {
+    const day = new Date(base);
+    day.setDate(base.getDate() - offset);
+    out.push(getTodayDateKey(day));
+  }
+
+  return out;
 }
 
 export default function HomeScreen({
@@ -117,10 +199,6 @@ export default function HomeScreen({
 
   const stepCountText = liveStepCounter.stepsToday.toLocaleString();
   const stepGoalText = `/${liveStepCounter.goal.toLocaleString()} steps`;
-  const suggestionText =
-    liveStepCounter.remainingSteps > 0
-      ? `Walk ${liveStepCounter.remainingSteps.toLocaleString()} more steps to reach your goal.`
-      : "Daily goal reached. Great consistency today.";
   const currentGoalSelectionValue = normalizeGoalForPicker(liveStepCounter.goal);
   const isGoalUnchanged = selectedStepGoal === currentGoalSelectionValue;
   const selectedGoalIndex = Math.min(
@@ -130,13 +208,33 @@ export default function HomeScreen({
   const [caloriesIntake, setCaloriesIntake] = useState(0);
   const [workoutCaloriesBurned, setWorkoutCaloriesBurned] = useState(0);
   const [isLoadingCaloriesIntake, setIsLoadingCaloriesIntake] = useState(false);
-  const loadCaloriesIntake = useCallback(async () => {
+  const [isLoadingLifestyle, setIsLoadingLifestyle] = useState(false);
+  const [workoutEntries, setWorkoutEntries] = useState<LoggedWorkoutEntry[]>([]);
+  const [profileWeightKg, setProfileWeightKg] = useState<number | null>(null);
+  const [lifestyleLog, setLifestyleLog] = useState<DailyLifestyleLog | null>(null);
+  const [workoutStreak, setWorkoutStreak] = useState(0);
+  const [stepHistory, setStepHistory] = useState<StepHistoryPoint[]>([]);
+  const [isLoadingStepHistory, setIsLoadingStepHistory] = useState(false);
+  const [trendChartWidth, setTrendChartWidth] = useState(0);
+  const [isStepsModalVisible, setIsStepsModalVisible] = useState(false);
+  const [isHydrationModalVisible, setIsHydrationModalVisible] = useState(false);
+  const [isSleepModalVisible, setIsSleepModalVisible] = useState(false);
+  const [hydrationInput, setHydrationInput] = useState("0");
+  const [sleepHoursInput, setSleepHoursInput] = useState("");
+  const [sleepQualityInput, setSleepQualityInput] = useState<number | null>(null);
+  const [isSavingHydration, setIsSavingHydration] = useState(false);
+  const [isSavingSleep, setIsSavingSleep] = useState(false);
+
+  const loadHomeMetrics = useCallback(async () => {
     setIsLoadingCaloriesIntake(true);
+    setIsLoadingLifestyle(true);
     try {
       const todayKey = getTodayDateKey();
-      const [nutritionLog, workoutLog] = await Promise.all([
+      const [nutritionLog, workoutLog, nextLifestyleLog, userSnapshot] = await Promise.all([
         loadDailyNutritionLog(user.uid, todayKey),
         loadDailyWorkoutLog(user.uid, todayKey),
+        loadDailyLifestyleLog(user.uid, todayKey),
+        getDoc(doc(db, "users", user.uid)),
       ]);
 
       const totalCalories = nutritionLog.entries.reduce((sum, entry) => {
@@ -151,22 +249,77 @@ export default function HomeScreen({
 
       setCaloriesIntake(Math.round(totalCalories));
       setWorkoutCaloriesBurned(Math.round(totalWorkoutCalories));
+      setWorkoutEntries(workoutLog.entries);
+      setLifestyleLog(nextLifestyleLog);
+      setProfileWeightKg(parseProfileWeight(userSnapshot.data()?.profile));
     } catch (error) {
       setCaloriesIntake(0);
       setWorkoutCaloriesBurned(0);
+      setWorkoutEntries([]);
+      setLifestyleLog(null);
+      setProfileWeightKg(null);
     } finally {
       setIsLoadingCaloriesIntake(false);
+      setIsLoadingLifestyle(false);
     }
   }, [user.uid]);
+
+  const loadWorkoutStreak = useCallback(async () => {
+    try {
+      const dateKeys = buildRecentDateKeys(STREAK_LOOKBACK_DAYS);
+      const logs = await Promise.all(
+        dateKeys.map((dateKey) =>
+          loadDailyWorkoutLog(user.uid, dateKey).catch(() => null),
+        ),
+      );
+
+      let streak = 0;
+      for (const log of logs) {
+        if (log && log.entries.length > 0) {
+          streak += 1;
+        } else {
+          break;
+        }
+      }
+
+      setWorkoutStreak(streak);
+    } catch {
+      setWorkoutStreak(0);
+    }
+  }, [user.uid]);
+
+  const loadStepHistory = useCallback(async () => {
+    setIsLoadingStepHistory(true);
+    try {
+      const ranges = buildDailyRanges({
+        endDate: new Date(),
+        count: STEP_TREND_DAYS,
+        dailyGoal: liveStepCounter.goal,
+      });
+      const points = await loadStepsForRanges(ranges, { uid: user.uid });
+      setStepHistory(points);
+    } catch {
+      setStepHistory([]);
+    } finally {
+      setIsLoadingStepHistory(false);
+    }
+  }, [liveStepCounter.goal, user.uid]);
 
   const totalCaloriesBurned = liveStepCounter.caloriesBurned + workoutCaloriesBurned;
 
   useFocusEffect(
     useCallback(() => {
-      loadCaloriesIntake().catch(() => {
+      loadHomeMetrics().catch(() => {
         setIsLoadingCaloriesIntake(false);
+        setIsLoadingLifestyle(false);
       });
-    }, [loadCaloriesIntake])
+      loadWorkoutStreak().catch(() => {
+        setWorkoutStreak(0);
+      });
+      loadStepHistory().catch(() => {
+        setIsLoadingStepHistory(false);
+      });
+    }, [loadHomeMetrics, loadStepHistory, loadWorkoutStreak])
   );
 
   useEffect(() => {
@@ -174,6 +327,108 @@ export default function HomeScreen({
       setSelectedStepGoal(currentGoalSelectionValue);
     }
   }, [isGoalModalVisible, currentGoalSelectionValue]);
+
+  const hydrationGoal = useMemo(
+    () =>
+      calculateAdaptiveHydrationGoal({
+        weightKg: profileWeightKg,
+        workouts: workoutEntries,
+        weather: lifestyleLog?.weather ?? EMPTY_WEATHER,
+      }),
+    [lifestyleLog?.weather, profileWeightKg, workoutEntries],
+  );
+
+  const currentWaterMl = lifestyleLog?.hydration.intakeMl ?? 0;
+  const hydrationProgressPercent = hydrationGoal.goalMl > 0
+    ? Math.min(100, Math.round((currentWaterMl / hydrationGoal.goalMl) * 100))
+    : 0;
+  const hydrationProgressWidth = `${hydrationProgressPercent}%` as `${number}%`;
+  const hydrationRemainingMl = Math.max(0, hydrationGoal.goalMl - currentWaterMl);
+
+  const sleepHours = lifestyleLog?.recovery.sleepHours ?? null;
+  const sleepQuality = lifestyleLog?.recovery.sleepQuality ?? null;
+  const sleepSummary = sleepHours === null ? "Not logged" : `${formatNumberInput(sleepHours)} h`;
+
+  const stepTrendPoints = useMemo(
+    () =>
+      stepHistory
+        .slice()
+        .reverse()
+        .map((point) => ({
+          steps: point.steps,
+          isGoalMet: point.isGoalMet,
+          target: point.target,
+        })),
+    [stepHistory],
+  );
+  const stepTrendLabels = useMemo(
+    () => stepHistory.slice().reverse().map((point) => point.label),
+    [stepHistory],
+  );
+  const stepTrendWidth = useMemo(() => {
+    const pointCount = Math.max(1, stepTrendPoints.length);
+    const dataWidth = MINI_CHART_PADDING * 2 + (pointCount - 1) * MINI_CHART_SPACING;
+    const minWidth = Math.max(160, dataWidth);
+    return trendChartWidth > 0 ? Math.max(minWidth, trendChartWidth) : minWidth;
+  }, [stepTrendPoints.length, trendChartWidth]);
+  const stepTrendSpacing = useMemo(() => {
+    const pointCount = Math.max(1, stepTrendPoints.length);
+    if (pointCount <= 1) {
+      return MINI_CHART_SPACING;
+    }
+
+    const dataWidth = MINI_CHART_PADDING * 2 + (pointCount - 1) * MINI_CHART_SPACING;
+    if (trendChartWidth > dataWidth) {
+      return (trendChartWidth - MINI_CHART_PADDING * 2) / (pointCount - 1);
+    }
+
+    return MINI_CHART_SPACING;
+  }, [stepTrendPoints.length, trendChartWidth]);
+
+  const insightText = useMemo(() => {
+    if (goalProgressPercent < 45) {
+      return `You're ${String(goalProgressPercent)}% to your step goal. A 10-minute walk will move the needle.`;
+    }
+
+    if (hydrationProgressPercent > 0 && hydrationProgressPercent < 70) {
+      return "Hydration is behind today. Add 250 ml to stay on track.";
+    }
+
+    if (typeof sleepHours === "number" && sleepHours > 0 && sleepHours < 6) {
+      return "Short sleep logged. Keep workouts lighter and prioritize recovery.";
+    }
+
+    const calorieBalance = caloriesIntake - totalCaloriesBurned;
+    if (caloriesIntake > 0 && totalCaloriesBurned > 0 && calorieBalance > 450) {
+      return "You're in a calorie surplus. A short workout can balance the day.";
+    }
+
+    if (workoutStreak >= 3) {
+      return `Nice ${String(workoutStreak)}-day workout streak. Keep the momentum going.`;
+    }
+
+    return "Keep logging meals, workouts, water, and sleep to unlock sharper coaching.";
+  }, [
+    caloriesIntake,
+    goalProgressPercent,
+    hydrationProgressPercent,
+    sleepHours,
+    totalCaloriesBurned,
+    workoutStreak,
+  ]);
+
+  useEffect(() => {
+    if (isHydrationModalVisible) {
+      setHydrationInput(String(currentWaterMl));
+    }
+  }, [currentWaterMl, isHydrationModalVisible]);
+
+  useEffect(() => {
+    if (isSleepModalVisible) {
+      setSleepHoursInput(formatNumberInput(sleepHours));
+      setSleepQualityInput(sleepQuality ?? null);
+    }
+  }, [isSleepModalVisible, sleepHours, sleepQuality]);
 
   const handleSaveGoal = async () => {
     if (isGoalUnchanged) {
@@ -193,6 +448,110 @@ export default function HomeScreen({
       showAlert({
         title: "Couldn't update goal",
         message,
+      });
+    }
+  };
+
+  const saveHydration = async (nextIntakeMl: number) => {
+    const intakeMl = Math.max(0, Math.round(nextIntakeMl));
+    const todayKey = getTodayDateKey();
+
+    setIsSavingHydration(true);
+    try {
+      await upsertDailyLifestyleLog(user.uid, todayKey, {
+        hydration: {
+          intakeMl,
+          goalMl: hydrationGoal.goalMl,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      setLifestyleLog((prev) =>
+        normalizeLifestyleLog(
+          {
+            ...(prev ?? {}),
+            hydration: {
+              intakeMl,
+              goalMl: hydrationGoal.goalMl,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+          todayKey,
+        ),
+      );
+      setHydrationInput(String(intakeMl));
+    } finally {
+      setIsSavingHydration(false);
+    }
+  };
+
+  const handleAddWater = async (amountMl: number) => {
+    try {
+      const base = parseOptionalNumber(hydrationInput) ?? currentWaterMl;
+      await saveHydration(base + amountMl);
+    } catch (error) {
+      showAlert({
+        title: "Could not update water",
+        message: getUserFriendlyErrorMessage(
+          error,
+          "Please try again in a moment.",
+        ),
+      });
+    }
+  };
+
+  const handleSaveHydration = async () => {
+    try {
+      const next = parseOptionalNumber(hydrationInput) ?? 0;
+      await saveHydration(next);
+      setIsHydrationModalVisible(false);
+    } catch (error) {
+      showAlert({
+        title: "Could not save hydration",
+        message: getUserFriendlyErrorMessage(
+          error,
+          "Please try again in a moment.",
+        ),
+      });
+    }
+  };
+
+  const handleSaveSleep = async () => {
+    try {
+      const sleepHoursValue = parseOptionalNumber(sleepHoursInput);
+
+      if (sleepHoursValue !== null && (sleepHoursValue < 0 || sleepHoursValue > 24)) {
+        showAlert({
+          title: "Invalid sleep hours",
+          message: "Sleep hours must be between 0 and 24.",
+        });
+        return;
+      }
+
+      const todayKey = getTodayDateKey();
+      const recovery: RecoveryLog = {
+        ...(lifestyleLog?.recovery ?? EMPTY_RECOVERY),
+        sleepHours: sleepHoursValue,
+        sleepQuality: sleepQualityInput,
+        loggedAt: new Date().toISOString(),
+      };
+
+      setIsSavingSleep(true);
+      try {
+        await upsertDailyLifestyleLog(user.uid, todayKey, { recovery });
+        setLifestyleLog((prev) =>
+          normalizeLifestyleLog({ ...(prev ?? {}), recovery }, todayKey),
+        );
+        setIsSleepModalVisible(false);
+      } finally {
+        setIsSavingSleep(false);
+      }
+    } catch (error) {
+      showAlert({
+        title: "Could not save sleep",
+        message: getUserFriendlyErrorMessage(
+          error,
+          "Please try again in a moment.",
+        ),
       });
     }
   };
@@ -366,34 +725,142 @@ export default function HomeScreen({
           </Pressable>
 
           <AppCard style={styles.metricsCard}>
-            <Text style={styles.metricsTitle}>Daily snapshot</Text>
+            <View style={styles.summaryHeaderRow}>
+              <Text style={styles.metricsTitle}>Today summary</Text>
+              <View style={styles.streakPill}>
+                <Flame size={14} color={appTheme.colors.text} strokeWidth={2.2} />
+                <Text style={styles.streakText}>{String(workoutStreak)} day streak</Text>
+              </View>
+            </View>
+
             <View style={styles.metricsGrid}>
               <View style={styles.metricItem}>
-                <View style={styles.metricValueRow}>
-                  <Flame size={18} color={appTheme.colors.text} strokeWidth={2.2} />
-                  <Text style={styles.metricValue}>
-                    {isLoadingCaloriesIntake ? 0 : totalCaloriesBurned} kcal
-                  </Text>
-                </View>
+                <Text style={styles.metricValue}>{stepCountText}</Text>
+                <Text style={styles.metricLabel}>Steps today</Text>
+              </View>
+              <View style={styles.metricItem}>
+                <Text style={styles.metricValue}>
+                  {isLoadingCaloriesIntake ? 0 : totalCaloriesBurned} kcal
+                </Text>
                 <Text style={styles.metricLabel}>Calories burned</Text>
               </View>
-
               <View style={styles.metricItem}>
-                <View style={styles.metricValueRow}>
-                  <Pizza size={18} color={appTheme.colors.text} strokeWidth={2.2} />
-                  <Text style={styles.metricValue}>{isLoadingCaloriesIntake ? 0 : caloriesIntake}</Text>
-                </View>
+                <Text style={styles.metricValue}>
+                  {isLoadingCaloriesIntake ? 0 : caloriesIntake}
+                </Text>
                 <Text style={styles.metricLabel}>Calories consumed</Text>
               </View>
             </View>
           </AppCard>
 
+          <View style={styles.lifestyleRow}>
+            <Pressable
+              onPress={() => setIsHydrationModalVisible(true)}
+              disabled={isLoadingLifestyle}
+              accessibilityRole="button"
+              accessibilityLabel="Log water intake"
+              style={styles.lifestylePressable}
+            >
+              <AppCard style={styles.lifestyleCard}>
+                <View style={styles.lifestyleHeaderRow}>
+                  <Droplets size={16} color={appTheme.colors.text} strokeWidth={2.2} />
+                  <Text style={styles.lifestyleTitle}>Water</Text>
+                </View>
+                <Text style={styles.lifestyleValue}>
+                  {isLoadingLifestyle ? "--" : formatMl(currentWaterMl)}
+                </Text>
+                <Text style={styles.lifestyleMeta}>
+                  Goal {formatMl(hydrationGoal.goalMl)} · {String(hydrationProgressPercent)}%
+                </Text>
+              </AppCard>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setIsSleepModalVisible(true)}
+              disabled={isLoadingLifestyle}
+              accessibilityRole="button"
+              accessibilityLabel="Log sleep"
+              style={styles.lifestylePressable}
+            >
+              <AppCard style={styles.lifestyleCard}>
+                <View style={styles.lifestyleHeaderRow}>
+                  <Moon size={16} color={appTheme.colors.text} strokeWidth={2.2} />
+                  <Text style={styles.lifestyleTitle}>Sleep</Text>
+                </View>
+                <Text style={styles.lifestyleValue}>
+                  {isLoadingLifestyle ? "Loading..." : sleepSummary}
+                </Text>
+                <Text style={styles.lifestyleMeta}>
+                  Quality {sleepQuality ?? "-"}
+                </Text>
+              </AppCard>
+            </Pressable>
+          </View>
+
+          <Pressable
+            onPress={() => setIsStepsModalVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Open steps trend chart"
+          >
+            <AppCard style={styles.trendCard}>
+              <View style={styles.trendHeaderRow}>
+                <Text style={styles.trendTitle}>Steps trend</Text>
+                <Text style={styles.trendMeta}>Last {String(STEP_TREND_DAYS)} days</Text>
+              </View>
+
+              <View
+                style={styles.trendChartWrap}
+                onLayout={({ nativeEvent }) => {
+                  const nextWidth = Math.round(nativeEvent.layout.width);
+                  if (nextWidth > 0 && nextWidth !== trendChartWidth) {
+                    setTrendChartWidth(nextWidth);
+                  }
+                }}
+              >
+                {isLoadingStepHistory ? (
+                  <AppSkeleton width={stepTrendWidth} height={MINI_CHART_HEIGHT} borderRadius={16} variant="home" />
+                ) : stepTrendPoints.length > 0 ? (
+                  <View style={{ width: stepTrendWidth }}>
+                    <StepBarChart
+                      points={stepTrendPoints}
+                      width={stepTrendWidth}
+                      height={MINI_CHART_HEIGHT}
+                      goalLineValue={liveStepCounter.goal}
+                      pointSpacing={stepTrendSpacing}
+                      padding={MINI_CHART_PADDING}
+                    />
+                    {stepTrendLabels.length > 0 ? (
+                      <View
+                        style={[
+                          styles.trendLabelsRow,
+                          { width: stepTrendWidth, paddingHorizontal: MINI_CHART_PADDING },
+                        ]}
+                      >
+                        {stepTrendLabels.map((label, index) => (
+                          <Text
+                            key={`trend-label-${label}-${index}`}
+                            style={[styles.trendLabel, { width: stepTrendSpacing }]}
+                            numberOfLines={1}
+                          >
+                            {label}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                ) : (
+                  <Text style={styles.emptyText}>Step history will appear once available.</Text>
+                )}
+              </View>
+            </AppCard>
+          </Pressable>
+
           <AppCard style={styles.suggestionCard}>
             <View style={styles.suggestionLabelRow}>
               <Lightbulb size={16} color={appTheme.colors.mutedText} strokeWidth={2.2} />
-              <Text style={styles.suggestionLabel}>AI Suggestion</Text>
+              <Text style={styles.suggestionLabel}>AI insight</Text>
             </View>
-            <Text style={styles.suggestionText}>{suggestionText}</Text>
+            <Text style={styles.suggestionText}>{insightText}</Text>
           </AppCard>
 
           {shouldShowPasswordSetup ? (
@@ -432,6 +899,162 @@ export default function HomeScreen({
           ) : null}
         </View>
       </ScrollView>
+
+      <StepsHistoryModal
+        visible={isStepsModalVisible}
+        onClose={() => setIsStepsModalVisible(false)}
+        dailyGoal={liveStepCounter.goal}
+        userId={user.uid}
+      />
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={isHydrationModalVisible}
+        onRequestClose={() => {
+          if (!isSavingHydration) {
+            setIsHydrationModalVisible(false);
+          }
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            style={styles.modalDismissLayer}
+            onPress={() => {
+              if (!isSavingHydration) {
+                setIsHydrationModalVisible(false);
+              }
+            }}
+          />
+
+          <View style={styles.sheetCard}>
+            <View style={styles.sheetHeaderRow}>
+              <Text style={styles.sheetTitle}>Water intake</Text>
+              <Text style={styles.sheetSubtitle}>Goal adapts to workouts and weather.</Text>
+            </View>
+
+            <View style={styles.sheetMetricsGrid}>
+              <View style={styles.sheetMetricItem}>
+                <Text style={styles.sheetMetricValue}>{formatMl(currentWaterMl)}</Text>
+                <Text style={styles.sheetMetricLabel}>Logged</Text>
+              </View>
+              <View style={styles.sheetMetricItem}>
+                <Text style={styles.sheetMetricValue}>{formatMl(hydrationGoal.goalMl)}</Text>
+                <Text style={styles.sheetMetricLabel}>Goal</Text>
+              </View>
+              <View style={styles.sheetMetricItem}>
+                <Text style={styles.sheetMetricValue}>{formatMl(hydrationRemainingMl)}</Text>
+                <Text style={styles.sheetMetricLabel}>Remaining</Text>
+              </View>
+            </View>
+
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: hydrationProgressWidth }]} />
+            </View>
+
+            <View style={styles.quickButtonRow}>
+              {QUICK_WATER_AMOUNTS.map((amount) => (
+                <Pressable
+                  key={amount}
+                  style={styles.quickButton}
+                  onPress={() => {
+                    void handleAddWater(amount);
+                  }}
+                  disabled={isSavingHydration}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add ${String(amount)} ml water`}
+                >
+                  <Text style={styles.quickButtonText}>{String(amount)} ml</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <AppTextField
+              label="Total water today (ml)"
+              placeholder="Example: 1800"
+              value={hydrationInput}
+              onChangeText={(value) => setHydrationInput(sanitizeDecimalInput(value))}
+              keyboardType="decimal-pad"
+              editable={!isSavingHydration}
+            />
+
+            <AppButton
+              title={isSavingHydration ? "Saving..." : "Save Hydration"}
+              onPress={() => {
+                void handleSaveHydration();
+              }}
+              loading={isSavingHydration}
+              disabled={isSavingHydration}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={isSleepModalVisible}
+        onRequestClose={() => {
+          if (!isSavingSleep) {
+            setIsSleepModalVisible(false);
+          }
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            style={styles.modalDismissLayer}
+            onPress={() => {
+              if (!isSavingSleep) {
+                setIsSleepModalVisible(false);
+              }
+            }}
+          />
+
+          <View style={styles.sheetCard}>
+            <View style={styles.sheetHeaderRow}>
+              <Text style={styles.sheetTitle}>Sleep log</Text>
+              <Text style={styles.sheetSubtitle}>Track recovery for smarter coaching.</Text>
+            </View>
+
+            <AppTextField
+              label="Sleep hours"
+              placeholder="Example: 7.5"
+              value={sleepHoursInput}
+              onChangeText={(value) => setSleepHoursInput(sanitizeDecimalInput(value))}
+              keyboardType="decimal-pad"
+              editable={!isSavingSleep}
+            />
+
+            <Text style={styles.helperText}>Sleep quality</Text>
+            <View style={styles.chipRow}>
+              {RATING_OPTIONS.map((rating) => {
+                const active = sleepQualityInput === rating;
+                return (
+                  <Pressable
+                    key={`sleep-${rating}`}
+                    style={[styles.chip, active ? styles.chipActive : null]}
+                    onPress={() => setSleepQualityInput(active ? null : rating)}
+                    disabled={isSavingSleep}
+                  >
+                    <Text style={[styles.chipText, active ? styles.chipTextActive : null]}>
+                      {String(rating)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <AppButton
+              title={isSavingSleep ? "Saving..." : "Save Sleep"}
+              onPress={() => {
+                void handleSaveSleep();
+              }}
+              loading={isSavingSleep}
+              disabled={isSavingSleep}
+            />
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         animationType="fade"

@@ -1,9 +1,16 @@
 const DEFAULT_CONTEXT_WINDOW_DAYS = 7;
 const MAX_CONTEXT_WINDOW_DAYS = 30;
+const MIN_ACTIVE_CALORIE_TARGET = 150;
+const MAX_ACTIVE_CALORIE_TARGET = 650;
+const ACTIVE_CALORIE_INTAKE_RATIO = 0.2;
 
 function toNumber(value, fallback = 0) {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function toDateKey(date) {
@@ -386,17 +393,29 @@ function buildRecencySummary(input) {
   const todaysWorkoutEntries = getEntriesForDate(workoutEntries, currentDateKey);
   const lastNutritionEntry = getMostRecentEntry(nutritionEntries);
   const lastWorkoutEntry = getMostRecentEntry(workoutEntries);
+  const nutritionCaloriesToday = Math.round(
+    todaysNutritionEntries.reduce((sum, entry) => sum + entry.calories, 0),
+  );
+  const workoutDurationMinToday = Math.round(
+    todaysWorkoutEntries.reduce((sum, entry) => sum + entry.durationMin, 0),
+  );
+  const workoutActiveCaloriesToday = Math.round(
+    todaysWorkoutEntries.reduce((sum, entry) => sum + Math.max(0, entry.caloriesActive), 0),
+  );
 
   return {
     currentDateKey,
     hasNutritionLoggedToday: todaysNutritionEntries.length > 0,
     mealsLoggedToday: todaysNutritionEntries.length,
+    nutritionCaloriesToday,
     lastNutritionDateKey: lastNutritionEntry?.dateKey ?? null,
     daysSinceLastNutritionLog: lastNutritionEntry
       ? daysBetweenDateKeys(lastNutritionEntry.dateKey, currentDateKey)
       : null,
     hasWorkoutLoggedToday: todaysWorkoutEntries.length > 0,
     workoutsLoggedToday: todaysWorkoutEntries.length,
+    workoutDurationMinToday,
+    workoutActiveCaloriesToday,
     lastWorkoutDateKey: lastWorkoutEntry?.dateKey ?? null,
     lastWorkoutName: lastWorkoutEntry?.workoutName || null,
     daysSinceLastWorkout: lastWorkoutEntry
@@ -420,6 +439,18 @@ function buildSignals(input) {
   if (recency && !recency.hasWorkoutLoggedToday && recency.lastWorkoutDateKey) {
     signals.push(
       `No workout logged today. Last logged workout was ${recency.lastWorkoutName || "a workout"} on ${recency.lastWorkoutDateKey}.`,
+    );
+  }
+
+  if (
+    recency &&
+    typeof recency.workoutGoalTargetActiveCalories === "number" &&
+    recency.workoutGoalTargetActiveCalories > 0 &&
+    recency.workoutActiveCaloriesToday < recency.workoutGoalTargetActiveCalories
+  ) {
+    const gap = Math.max(0, recency.workoutGoalTargetActiveCalories - recency.workoutActiveCaloriesToday);
+    signals.push(
+      `Workout energy today is ${String(recency.workoutActiveCaloriesToday)} kcal, ${String(gap)} kcal below the target.`,
     );
   }
 
@@ -674,11 +705,45 @@ export async function loadCoachContext(db, uid, options = {}) {
     entriesByDay: lifestyleByDate,
   };
 
-  const recency = buildRecencySummary({
+  const recencyBase = buildRecencySummary({
     currentDateKey,
     nutritionEntries,
     workoutEntries,
   });
+  const intakeDrivenTarget = recencyBase.nutritionCaloriesToday > 0
+    ? clampNumber(
+        Math.round(recencyBase.nutritionCaloriesToday * ACTIVE_CALORIE_INTAKE_RATIO),
+        MIN_ACTIVE_CALORIE_TARGET,
+        MAX_ACTIVE_CALORIE_TARGET,
+      )
+    : null;
+  const historyDrivenTarget = workoutSummary.avgDailyActiveCalories > 0
+    ? Math.round(workoutSummary.avgDailyActiveCalories)
+    : null;
+  const workoutGoalTargetActiveCalories =
+    typeof intakeDrivenTarget === "number"
+      ? Math.max(intakeDrivenTarget, historyDrivenTarget ?? 0, MIN_ACTIVE_CALORIE_TARGET)
+      : historyDrivenTarget ?? MIN_ACTIVE_CALORIE_TARGET;
+  const workoutGoalTargetMin = workoutSummary.avgDailyDurationMin > 0
+    ? workoutSummary.avgDailyDurationMin
+    : null;
+  const workoutGoalAchievedToday =
+    typeof workoutGoalTargetActiveCalories === "number"
+      ? recencyBase.workoutActiveCaloriesToday >= workoutGoalTargetActiveCalories
+      : typeof workoutGoalTargetMin === "number" &&
+        recencyBase.hasWorkoutLoggedToday &&
+        recencyBase.workoutDurationMinToday >= workoutGoalTargetMin;
+  const workoutActiveCalorieGapToday =
+    typeof workoutGoalTargetActiveCalories === "number"
+      ? Math.max(0, workoutGoalTargetActiveCalories - recencyBase.workoutActiveCaloriesToday)
+      : null;
+  const recency = {
+    ...recencyBase,
+    workoutGoalTargetActiveCalories,
+    workoutActiveCalorieGapToday,
+    workoutGoalTargetMin,
+    workoutGoalAchievedToday,
+  };
 
   const signals = buildSignals({
     profile,

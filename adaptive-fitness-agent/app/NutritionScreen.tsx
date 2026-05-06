@@ -6,7 +6,7 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { Barcode, Camera, CalendarDays, ChevronDown, Link, Plus } from "lucide-react-native";
+import { Barcode, Camera, CalendarDays, ChevronDown, Plus } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import NutritionScreenModal, {
   type NutritionScreenModalController,
@@ -21,12 +21,10 @@ import { useAuthUser } from "../hooks/useAuthUser";
 import {
   analyzePlateFoodImage,
   getFoodByBarcode,
-  parseRecipeUrl,
   searchFoodCatalog,
   type FoodCatalogItem,
   type MealType,
   type PlateFoodAnalysisResult,
-  type RecipeNutritionResult,
 } from "../services/nutritionApi";
 import {
   loadDailyNutritionLog,
@@ -42,7 +40,6 @@ import { getTodayDateKey } from "../services/helperFunctions"
 import DatePickerModal from "./DatePickerModal";
 import BarcodeFoodScannerModal from "./BarcodeFoodScannerModal";
 import PlateFoodCaptureModal from "./PlateFoodCaptureModal";
-import RecipeImportModal from "./RecipeImportModal";
 
 const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snacks"];
 const MEAL_LABELS: Record<MealType, string> = {
@@ -108,14 +105,6 @@ type BarcodeScannerDraft = {
   isResolving: boolean;
 };
 
-type RecipeImportDraft = {
-  visible: boolean;
-  meal: MealType;
-  url: string;
-  servings: string;
-  isParsing: boolean;
-};
-
 const initialNutritionSearchState: NutritionSearchState = {
   query: "",
   isSearching: false,
@@ -164,14 +153,6 @@ const initialBarcodeScannerDraft: BarcodeScannerDraft = {
   visible: false,
   meal: "breakfast",
   isResolving: false,
-};
-
-const initialRecipeImportDraft: RecipeImportDraft = {
-  visible: false,
-  meal: "breakfast",
-  url: "",
-  servings: "1",
-  isParsing: false,
 };
 
 type NutritionModalDraftAction =
@@ -356,22 +337,6 @@ function buildPlateManualState(result: PlateFoodAnalysisResult): NutritionManual
   };
 }
 
-function buildRecipeManualState(result: RecipeNutritionResult): NutritionManualState {
-  return {
-    name: result.title ? "Recipe: " + result.title : "Recipe import",
-    calories: formatManualNumber(result.calories),
-    protein: formatManualNumber(result.protein),
-    carbs: formatManualNumber(result.carbs),
-    fat: formatManualNumber(result.fat),
-    fiber: formatManualNumber(result.fiber),
-    sodiumMg: formatManualNumber(result.sodiumMg),
-    potassiumMg: formatManualNumber(result.potassiumMg),
-    calciumMg: formatManualNumber(result.calciumMg),
-    ironMg: formatManualNumber(result.ironMg),
-    vitaminCMg: formatManualNumber(result.vitaminCMg),
-  };
-}
-
 function perServing(total: number, quantity: number) {
   if (!Number.isFinite(quantity) || quantity <= 0) {
     return total;
@@ -444,7 +409,6 @@ export default function NutritionScreen() {
   );
   const [plateDraft, setPlateDraft] = useState<PlateCaptureDraft>(initialPlateCaptureDraft);
   const [barcodeDraft, setBarcodeDraft] = useState<BarcodeScannerDraft>(initialBarcodeScannerDraft);
-  const [recipeDraft, setRecipeDraft] = useState<RecipeImportDraft>(initialRecipeImportDraft);
 
   const {
     isModalVisible,
@@ -799,81 +763,6 @@ export default function NutritionScreen() {
         ),
       });
       setBarcodeDraft((prev) => ({ ...prev, isResolving: false }));
-    }
-  };
-
-  const openRecipeImport = (meal: MealType) => {
-    if (!ensureEditableDate()) return;
-
-    if (!user?.uid) {
-      showAlert({
-        title: "Sign-in required",
-        message: "Please sign in to import recipes.",
-      });
-      return;
-    }
-
-    setRecipeDraft({
-      ...initialRecipeImportDraft,
-      visible: true,
-      meal,
-    });
-  };
-
-  const closeRecipeImport = () => {
-    if (recipeDraft.isParsing) return;
-    setRecipeDraft(initialRecipeImportDraft);
-  };
-
-  const handleRecipeServingsChange = (raw: string) => {
-    setRecipeDraft((prev) => ({
-      ...prev,
-      servings: sanitizeDecimalLabel(raw),
-    }));
-  };
-
-  const handleParseRecipe = async () => {
-    const url = recipeDraft.url.trim();
-    const servings = Number(recipeDraft.servings);
-    const quantity = Number.isFinite(servings) && servings > 0
-      ? clampQuantity(servings)
-      : 1;
-
-    if (!/^https?:\/\//i.test(url)) {
-      showAlert({
-        title: "Recipe link needed",
-        message: "Enter a recipe URL that starts with http or https.",
-      });
-      return;
-    }
-
-    setRecipeDraft((prev) => ({ ...prev, isParsing: true }));
-
-    try {
-      const recipe = await parseRecipeUrl({
-        url,
-        servings: quantity,
-      });
-
-      dispatchModalDraft({
-        type: "OPEN_PLATE_MANUAL",
-        payload: {
-          selectedMeal: recipeDraft.meal,
-          manual: buildRecipeManualState(recipe),
-          quantity,
-          quantityInput: formatQuantity(quantity),
-        },
-      });
-      setRecipeDraft(initialRecipeImportDraft);
-    } catch (error) {
-      showAlert({
-        title: "Recipe parse failed",
-        message: getUserFriendlyErrorMessage(
-          error,
-          "This recipe may not expose nutrition data. Try another link or enter macros manually.",
-        ),
-      });
-      setRecipeDraft((prev) => ({ ...prev, isParsing: false }));
     }
   };
 
@@ -1382,16 +1271,6 @@ export default function NutritionScreen() {
 
                       <Pressable
                         style={styles.addMealButton}
-                        onPress={() => openRecipeImport(meal)}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Import ${MEAL_LABELS[meal]} recipe link`}
-                      >
-                        <Link size={14} color={appTheme.colors.text} strokeWidth={2.4} />
-                        <Text style={styles.addMealText}>Link</Text>
-                      </Pressable>
-
-                      <Pressable
-                        style={styles.addMealButton}
                         onPress={() => openAddModal(meal)}
                         accessibilityRole="button"
                         accessibilityLabel={`Add ${MEAL_LABELS[meal]} entry`}
@@ -1463,19 +1342,6 @@ export default function NutritionScreen() {
         }}
         onClose={closeBarcodeScanner}
       />
-      <RecipeImportModal
-        visible={recipeDraft.visible}
-        meal={recipeDraft.meal}
-        url={recipeDraft.url}
-        servings={recipeDraft.servings}
-        isParsing={recipeDraft.isParsing}
-        onChangeUrl={(value) => setRecipeDraft((prev) => ({ ...prev, url: value }))}
-        onChangeServings={handleRecipeServingsChange}
-        onParse={() => {
-          void handleParseRecipe();
-        }}
-        onClose={closeRecipeImport}
-      />
       <NutritionScreenModal controller={nutritionModalController} />
       <NutritionEntryDetailModal 
       visible={isEntryDetailVisible} 
@@ -1489,11 +1355,3 @@ export default function NutritionScreen() {
   );
 }
 
-function sanitizeDecimalLabel(raw: string) {
-  const normalized = raw.replace(",", ".").replace(/[^0-9.]/g, "");
-  const firstDot = normalized.indexOf(".");
-  if (firstDot < 0) {
-    return normalized;
-  }
-  return normalized.slice(0, firstDot + 1) + normalized.slice(firstDot + 1).replace(/\./g, "");
-}
