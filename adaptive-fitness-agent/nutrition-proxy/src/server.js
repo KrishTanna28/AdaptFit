@@ -41,6 +41,21 @@ function normalizeFoodLabel(value) {
     .replace(/\s+/g, " ");
 }
 
+function normalizeDetectedNutritionQuery(value) {
+  const normalized = normalizeFoodLabel(value);
+  const compact = normalized.replace(/\s+/g, "");
+
+  if (compact.startsWith("dish") && compact.length > 4) {
+    return compact.slice(4).replace(/-/g, " ");
+  }
+
+  if (compact.startsWith("ing") && compact.length > 3) {
+    return compact.slice(3).replace(/-/g, " ");
+  }
+
+  return normalized;
+}
+
 const REDIS_URL = (process.env.REDIS_URL ?? "").trim();
 const REDIS_KEY_PREFIX = (process.env.REDIS_KEY_PREFIX ?? "adaptive_fitness:nutrition").trim();
 const REDIS_CONNECT_TIMEOUT_MS = toPositiveInt(process.env.REDIS_CONNECT_TIMEOUT_MS, 5000);
@@ -320,6 +335,7 @@ function normalizeDetections(rawPayload) {
     byLabel.set(normalizedLabel, {
       label,
       normalizedLabel,
+      nutritionQuery: normalizeDetectedNutritionQuery(label),
       confidence,
       pixelArea,
     });
@@ -670,6 +686,341 @@ async function searchOpenFoodFacts(query, pageSize) {
   return items;
 }
 
+function mapOpenFoodFactsProduct(product) {
+  const name = String(product?.product_name ?? "").trim();
+  if (!name) return null;
+
+  const nutriments = product.nutriments ?? {};
+  const code = String(product.code ?? "").trim();
+  const servingSizeGramsFromText = parseServingSizeInGrams(product.serving_size);
+  const servingSizeGramsFromQuantity = parseServingQuantityToGrams(
+    product.serving_quantity,
+    product.serving_quantity_unit,
+  );
+  const servingSizeGrams = servingSizeGramsFromText ?? servingSizeGramsFromQuantity;
+
+  const servingSizeMlFromText = parseServingSizeInMl(product.serving_size);
+  const servingSizeMlFromQuantity = parseServingQuantityToMl(
+    product.serving_quantity,
+    product.serving_quantity_unit,
+  );
+  const servingSizeMl = servingSizeMlFromText ?? servingSizeMlFromQuantity;
+  const servingText =
+    (product.serving_size ? String(product.serving_size).trim() : "") ||
+    (product.serving_quantity && product.serving_quantity_unit
+      ? `${product.serving_quantity} ${product.serving_quantity_unit}`
+      : "") ||
+    (product.quantity ? String(product.quantity).trim() : "") ||
+    undefined;
+
+  const hasPer100ml = [
+    nutriments["energy-kcal_100ml"],
+    nutriments.proteins_100ml,
+    nutriments.carbohydrates_100ml,
+    nutriments.fat_100ml,
+    nutriments.fiber_100ml,
+    nutriments.sodium_100ml,
+    nutriments.potassium_100ml,
+    nutriments.calcium_100ml,
+    nutriments.iron_100ml,
+    nutriments["vitamin-c_100ml"],
+  ].some((value) => Number.isFinite(Number(value)));
+
+  const nutritionDataPer = normalizeOffNutritionDataPer(product.nutrition_data_per);
+
+  let basisFromDataPer;
+  if (nutritionDataPer === "100ml") {
+    basisFromDataPer = "100ml";
+  } else if (nutritionDataPer === "100g") {
+    basisFromDataPer = "100g";
+  } else if (nutritionDataPer === "serving") {
+    if (servingSizeMl && !servingSizeGrams) {
+      basisFromDataPer = "100ml";
+    } else if (servingSizeGrams) {
+      basisFromDataPer = "100g";
+    }
+  }
+
+  const nutrientBasis =
+    basisFromDataPer ??
+    (hasPer100ml ? "100ml" : servingSizeMl && !servingSizeGrams ? "100ml" : "100g");
+
+  return {
+    id: code ? `off-${code}` : `off-${name.toLowerCase().replace(/\s+/g, "-")}`,
+    name,
+    brand: product.brands ? String(product.brands) : undefined,
+    source: "OpenFoodFacts",
+    nutrientBasis,
+    caloriesPer100g:
+      nutrientBasis === "100ml"
+        ? toNumber(nutriments["energy-kcal_100ml"], toNumber(nutriments["energy-kcal_100g"], 0))
+        : toNumber(nutriments["energy-kcal_100g"], 0),
+    proteinPer100g:
+      nutrientBasis === "100ml"
+        ? toNumber(nutriments.proteins_100ml, toNumber(nutriments.proteins_100g, 0))
+        : toNumber(nutriments.proteins_100g, 0),
+    carbsPer100g:
+      nutrientBasis === "100ml"
+        ? toNumber(nutriments.carbohydrates_100ml, toNumber(nutriments.carbohydrates_100g, 0))
+        : toNumber(nutriments.carbohydrates_100g, 0),
+    fatPer100g:
+      nutrientBasis === "100ml"
+        ? toNumber(nutriments.fat_100ml, toNumber(nutriments.fat_100g, 0))
+        : toNumber(nutriments.fat_100g, 0),
+    fiberPer100g:
+      nutrientBasis === "100ml"
+        ? toNumber(nutriments.fiber_100ml, toNumber(nutriments.fiber_100g, 0))
+        : toNumber(nutriments.fiber_100g, 0),
+    sodiumMgPer100g:
+      nutrientBasis === "100ml"
+        ? toMilligrams(
+            nutriments.sodium_100ml,
+            nutriments.sodium_unit ?? "g",
+            toMilligrams(nutriments.sodium_100g, nutriments.sodium_unit ?? "g", 0),
+          )
+        : toMilligrams(nutriments.sodium_100g, nutriments.sodium_unit ?? "g", 0),
+    potassiumMgPer100g:
+      nutrientBasis === "100ml"
+        ? toMilligrams(
+            nutriments.potassium_100ml,
+            nutriments.potassium_unit ?? "mg",
+            toMilligrams(nutriments.potassium_100g, nutriments.potassium_unit ?? "mg", 0),
+          )
+        : toMilligrams(nutriments.potassium_100g, nutriments.potassium_unit ?? "mg", 0),
+    calciumMgPer100g:
+      nutrientBasis === "100ml"
+        ? toMilligrams(
+            nutriments.calcium_100ml,
+            nutriments.calcium_unit ?? "mg",
+            toMilligrams(nutriments.calcium_100g, nutriments.calcium_unit ?? "mg", 0),
+          )
+        : toMilligrams(nutriments.calcium_100g, nutriments.calcium_unit ?? "mg", 0),
+    ironMgPer100g:
+      nutrientBasis === "100ml"
+        ? toMilligrams(
+            nutriments.iron_100ml,
+            nutriments.iron_unit ?? "mg",
+            toMilligrams(nutriments.iron_100g, nutriments.iron_unit ?? "mg", 0),
+          )
+        : toMilligrams(nutriments.iron_100g, nutriments.iron_unit ?? "mg", 0),
+    vitaminCMgPer100g:
+      nutrientBasis === "100ml"
+        ? toMilligrams(
+            nutriments["vitamin-c_100ml"],
+            nutriments["vitamin-c_unit"] ?? "mg",
+            toMilligrams(nutriments["vitamin-c_100g"], nutriments["vitamin-c_unit"] ?? "mg", 0),
+          )
+        : toMilligrams(nutriments["vitamin-c_100g"], nutriments["vitamin-c_unit"] ?? "mg", 0),
+    servingSizeGrams,
+    servingSizeMl,
+    servingText,
+    imageUrl: product.image_front_small_url ? String(product.image_front_small_url) : undefined,
+  };
+}
+
+async function getOpenFoodFactsProductByBarcode(barcode) {
+  const fields = [
+    "code",
+    "product_name",
+    "brands",
+    "serving_size",
+    "serving_quantity",
+    "serving_quantity_unit",
+    "nutrition_data_per",
+    "quantity",
+    "nutriments",
+    "image_front_small_url",
+  ].join(",");
+  const url =
+    `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json` +
+    `?fields=${encodeURIComponent(fields)}`;
+
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": OFF_USER_AGENT,
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Open Food Facts barcode lookup failed (${response.status}).`);
+  }
+
+  const payload = await response.json();
+  if (Number(payload.status) !== 1 || !payload.product) {
+    return null;
+  }
+
+  return mapOpenFoodFactsProduct(payload.product);
+}
+
+function decodeHtmlEntities(value) {
+  return String(value ?? "")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
+
+function stripTags(value) {
+  return decodeHtmlEntities(String(value ?? "").replace(/<[^>]+>/g, " "));
+}
+
+function extractTitleFromHtml(html) {
+  const match = String(html).match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return match ? stripTags(match[1]).replace(/\s+/g, " ").trim() : "";
+}
+
+function extractJsonLdBlocks(html) {
+  const blocks = [];
+  const regex = /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match;
+
+  while ((match = regex.exec(String(html))) !== null) {
+    const raw = decodeHtmlEntities(match[1]);
+    if (!raw) continue;
+
+    try {
+      blocks.push(JSON.parse(raw));
+    } catch {
+      const cleaned = raw.replace(/^\s*<!--/, "").replace(/-->\s*$/, "").trim();
+      try {
+        blocks.push(JSON.parse(cleaned));
+      } catch {
+        // Ignore invalid JSON-LD blocks and keep looking.
+      }
+    }
+  }
+
+  return blocks;
+}
+
+function getJsonLdTypes(node) {
+  const rawType = node?.["@type"] ?? node?.type;
+  if (Array.isArray(rawType)) {
+    return rawType.map((item) => String(item).toLowerCase());
+  }
+  return rawType ? [String(rawType).toLowerCase()] : [];
+}
+
+function collectRecipeNodes(value, out = []) {
+  if (!value || typeof value !== "object") {
+    return out;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectRecipeNodes(item, out));
+    return out;
+  }
+
+  if (getJsonLdTypes(value).includes("recipe")) {
+    out.push(value);
+  }
+
+  if (Array.isArray(value["@graph"])) {
+    collectRecipeNodes(value["@graph"], out);
+  }
+
+  return out;
+}
+
+function parseNutrientNumber(value) {
+  if (value && typeof value === "object") {
+    return parseNutrientNumber(value.value ?? value.amount);
+  }
+
+  const text = String(value ?? "").replace(/,/g, "");
+  const match = text.match(/-?\d+(?:\.\d+)?/);
+  if (!match) {
+    return 0;
+  }
+
+  const n = Number(match[0]);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function parseMilligramNutrient(value) {
+  const n = parseNutrientNumber(value);
+  const text = String(value ?? "").toLowerCase();
+  if (!n) {
+    return 0;
+  }
+
+  if (/\bmcg\b|\bug\b|microgram/.test(text)) {
+    return n / 1000;
+  }
+
+  if (/\bg\b|gram/.test(text) && !/\bmg\b|milligram/.test(text)) {
+    return n * 1000;
+  }
+
+  return n;
+}
+
+function parseServings(value) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const match = String(raw ?? "").replace(/,/g, "").match(/\d+(?:\.\d+)?/);
+  if (!match) {
+    return null;
+  }
+
+  const n = Number(match[0]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function parseRecipePage(html, sourceUrl, requestedServings) {
+  const jsonLdBlocks = extractJsonLdBlocks(html);
+  const recipe = jsonLdBlocks.flatMap((block) => collectRecipeNodes(block))[0];
+
+  if (!recipe) {
+    const error = new Error("No schema.org Recipe data found on this page.");
+    error.statusCode = 422;
+    throw error;
+  }
+
+  const nutrition = Array.isArray(recipe.nutrition)
+    ? recipe.nutrition.find((item) => item && typeof item === "object") ?? {}
+    : recipe.nutrition ?? {};
+
+  const calories = parseNutrientNumber(nutrition.calories ?? nutrition.energyContent);
+  const protein = parseNutrientNumber(nutrition.proteinContent);
+  const carbs = parseNutrientNumber(nutrition.carbohydrateContent);
+  const fat = parseNutrientNumber(nutrition.fatContent);
+  const fiber = parseNutrientNumber(nutrition.fiberContent);
+  const sodiumMg = parseMilligramNutrient(nutrition.sodiumContent);
+
+  if (![calories, protein, carbs, fat, fiber, sodiumMg].some((value) => value > 0)) {
+    const error = new Error("Recipe nutrition data was not available on this page.");
+    error.statusCode = 422;
+    throw error;
+  }
+
+  const yieldServings = parseServings(recipe.recipeYield ?? recipe.yield);
+  const servings =
+    Number.isFinite(requestedServings) && requestedServings > 0
+      ? requestedServings
+      : yieldServings;
+
+  return {
+    title: String(recipe.name ?? "").trim() || extractTitleFromHtml(html) || sourceUrl,
+    sourceUrl,
+    servings,
+    servingBasis: "per-serving-schema",
+    calories: roundOne(calories),
+    protein: roundOne(protein),
+    carbs: roundOne(carbs),
+    fat: roundOne(fat),
+    fiber: roundOne(fiber),
+    sodiumMg: roundOne(sodiumMg),
+    potassiumMg: 0,
+    calciumMg: 0,
+    ironMg: 0,
+    vitaminCMg: 0,
+  };
+}
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
@@ -726,6 +1077,67 @@ app.get("/api/foods/search", async (req, res) => {
   }
 });
 
+app.get("/api/foods/barcode/:barcode", async (req, res) => {
+  try {
+    const barcode = String(req.params.barcode ?? "").replace(/\D/g, "");
+
+    if (barcode.length < 6) {
+      return res.status(400).json({ message: "Barcode must be at least 6 digits." });
+    }
+
+    const item = await getOpenFoodFactsProductByBarcode(barcode);
+    if (!item) {
+      return res.status(404).json({ message: "No Open Food Facts product found for this barcode." });
+    }
+
+    return res.json({ item });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Barcode lookup failed.",
+      detail: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+app.post("/api/recipes/parse", async (req, res) => {
+  try {
+    const rawUrl = String(req.body?.url ?? "").trim();
+    const requestedServings = toNumber(req.body?.servings, 0);
+    let url;
+
+    try {
+      url = new URL(rawUrl);
+    } catch {
+      return res.status(400).json({ message: "A valid recipe URL is required." });
+    }
+
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return res.status(400).json({ message: "Recipe URL must start with http or https." });
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        "User-Agent": OFF_USER_AGENT,
+        Accept: "text/html,application/xhtml+xml",
+      },
+    });
+
+    if (!response.ok) {
+      return res.status(502).json({ message: `Recipe page fetch failed (${response.status}).` });
+    }
+
+    const html = await response.text();
+    const recipe = parseRecipePage(html, url.toString(), requestedServings);
+    return res.json({ recipe });
+  } catch (error) {
+    const statusCode = Number(error?.statusCode);
+    return res.status(Number.isFinite(statusCode) ? statusCode : 500).json({
+      message: "Recipe parse failed.",
+      detail: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
 app.post("/api/foods/plate/analyze", async (req, res) => {
   try {
     const imageBase64 = String(req.body?.imageBase64 ?? "").trim();
@@ -743,7 +1155,7 @@ app.post("/api/foods/plate/analyze", async (req, res) => {
     const detections = await runYoloFoodDetection({ imageBase64, mimeType });
     if (detections.length === 0) {
       return res.status(422).json({
-        message: "No food items were detected in this image.",
+        message: `No food items were detected in this image by the YOLO model at confidence ${String(YOLO_MIN_CONFIDENCE)}.`,
       });
     }
 
@@ -751,10 +1163,11 @@ app.post("/api/foods/plate/analyze", async (req, res) => {
       await Promise.all(
         detections.map(async (detection) => {
           const matchedFood = await resolveNutritionForDetectedLabel(detection.normalizedLabel);
-          if (!matchedFood) return null;
+          const matchedCleanedFood = matchedFood ?? await resolveNutritionForDetectedLabel(detection.nutritionQuery);
+          if (!matchedCleanedFood) return null;
           return {
             detection,
-            matchedFood,
+            matchedFood: matchedCleanedFood,
           };
         }),
       )
@@ -763,6 +1176,7 @@ app.post("/api/foods/plate/analyze", async (req, res) => {
     if (resolvedDetections.length === 0) {
       return res.status(422).json({
         message: "No detected items matched food nutrition data.",
+        detectedLabels: detections.map((detection) => detection.label),
       });
     }
 
@@ -775,7 +1189,9 @@ app.post("/api/foods/plate/analyze", async (req, res) => {
 
     const items = await Promise.all(
       resolvedDetections.map(async ({ detection, matchedFood }) => {
-        const areaRatio = detection.pixelArea / totalPixelArea;
+        const areaRatio = detection.portionRatio > 0
+          ? detection.portionRatio
+          : detection.pixelArea / totalPixelArea;
         const estimatedWeightGrams = totalWeightGrams * areaRatio;
         const nutrients = scaleFoodNutrients(matchedFood, estimatedWeightGrams);
 

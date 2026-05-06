@@ -10,6 +10,9 @@ const MAX_MESSAGE_LENGTH = 4000;
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_CONTENT_LENGTH = 20000;
 const MAX_AUDIO_BASE64_LENGTH = 8 * 1024 * 1024;
+const MAX_WORKOUT_TITLE_LENGTH = 80;
+const MAX_WORKOUT_NAME_LENGTH = 80;
+const MAX_WORKOUT_EXERCISES = 16;
 
 const PROVIDER_ACCESS_DENIED_PATTERN =
   /denied access|permission[_\s-]?denied|api key not valid|insufficient permissions|contact support|forbidden|status:\s*403|api has not been used|disabled/i;
@@ -71,6 +74,90 @@ function parseBearerToken(authorizationHeader) {
 
 function toSafeMessage(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function extractJsonText(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) {
+    return String(fenced[1] ?? "").trim();
+  }
+
+  const firstCurly = raw.indexOf("{");
+  const lastCurly = raw.lastIndexOf("}");
+  if (firstCurly !== -1 && lastCurly > firstCurly) {
+    return raw.slice(firstCurly, lastCurly + 1).trim();
+  }
+
+  return raw;
+}
+
+function toPositiveInt(value) {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n <= 0) {
+    return null;
+  }
+  return Math.round(n);
+}
+
+function normalizeWorkoutPlan(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+
+  const title = toSafeMessage(raw.title).slice(0, MAX_WORKOUT_TITLE_LENGTH);
+  const exercisesRaw = Array.isArray(raw.exercises) ? raw.exercises : [];
+  const exercises = exercisesRaw
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const name = toSafeMessage(item.name).slice(0, MAX_WORKOUT_NAME_LENGTH);
+      const sets = toPositiveInt(item.sets);
+      const reps = toPositiveInt(item.reps);
+
+      if (!name || !sets || !reps) {
+        return null;
+      }
+
+      return { name, sets, reps };
+    })
+    .filter((item) => item !== null);
+
+  if (!title || exercises.length === 0) {
+    return null;
+  }
+
+  return {
+    title,
+    exercises: exercises.slice(0, MAX_WORKOUT_EXERCISES),
+  };
+}
+
+function parseWorkoutPlan(text) {
+  const cleaned = extractJsonText(text);
+  if (!cleaned) {
+    return null;
+  }
+
+  try {
+    return normalizeWorkoutPlan(JSON.parse(cleaned));
+  } catch {
+    return null;
+  }
+}
+
+function buildWorkoutReply(workoutPlan) {
+  const count = workoutPlan.exercises.length;
+  const label = count === 1 ? "exercise" : "exercises";
+  return `Workout ready: ${workoutPlan.title}. Tap "Load Workout to Today" to add ${String(
+    count,
+  )} ${label}.`;
 }
 
 function normalizeWindowDays(value) {
@@ -186,6 +273,9 @@ export function mountCoachRoutes(app) {
         history,
       });
 
+      const workoutPlan = parseWorkoutPlan(coachResponse.text);
+      const replyText = workoutPlan ? buildWorkoutReply(workoutPlan) : coachResponse.text;
+
       await appendConversationMessage(db, uid, conversationId, {
         role: "user",
         content: message,
@@ -193,19 +283,20 @@ export function mountCoachRoutes(app) {
 
       await appendConversationMessage(db, uid, conversationId, {
         role: "assistant",
-        content: coachResponse.text,
+        content: replyText,
         model: coachResponse.model,
         usage: coachResponse.usage,
       });
 
       return res.json({
         conversationId,
-        reply: coachResponse.text,
+        reply: replyText,
         model: coachResponse.model,
         usage: coachResponse.usage,
         contextSignals: context.signals,
         contextWindow: context.window,
         attachmentsUsed: attachments.length,
+        workoutPlan: workoutPlan ?? undefined,
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown error";

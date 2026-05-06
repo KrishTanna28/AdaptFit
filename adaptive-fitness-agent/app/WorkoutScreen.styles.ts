@@ -180,10 +180,12 @@ export const styles = StyleSheet.create({
     backgroundColor: appTheme.colors.cardAlt,
     overflow: "hidden",
   },
+  modalScroll: {
+    maxHeight: "100%",
+  },
   modalContent: {
     padding: appTheme.spacing.lg,
     gap: appTheme.spacing.md,
-    flexShrink: 1,
   },
   modalTitle: {
     ...appTheme.typography.subheading,

@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { CalendarDays, Camera, ChevronDown, Plus } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { doc, getDoc } from "firebase/firestore";
+import { useFocusEffect } from "@react-navigation/native";
 
 import AppCard from "../components/ui/AppCard";
 import {
@@ -187,12 +188,11 @@ function estimateStrengthDurationMin(input: {
   repsPerSet: number;
   secPerRep: number;
   restBetweenSetsSec: number;
-  setupSec: number;
   minSessionMin: number;
 }) {
   const repSeconds = input.sets * input.repsPerSet * input.secPerRep;
   const restSeconds = Math.max(0, input.sets - 1) * input.restBetweenSetsSec;
-  const totalMin = (repSeconds + restSeconds + input.setupSec) / 60;
+  const totalMin = (repSeconds + restSeconds) / 60;
   return Math.max(input.minSessionMin, totalMin);
 }
 
@@ -255,7 +255,6 @@ export default function WorkoutScreen() {
   const [repsLabel, setRepsLabel] = useState("");
   const [secPerRepLabel, setSecPerRepLabel] = useState("4");
   const [restBetweenSetsSecLabel, setRestBetweenSetsSecLabel] = useState("75");
-  const [setupSecLabel, setSetupSecLabel] = useState("90");
   const [minSessionMinLabel, setMinSessionMinLabel] = useState("5");
   const [intensity, setIntensity] = useState<MetIntensity>("moderate");
 
@@ -308,47 +307,49 @@ export default function WorkoutScreen() {
     };
   }, [user?.uid]);
 
-  useEffect(() => {
-    let mounted = true;
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
 
-    const loadLog = async () => {
-      if (!user?.uid) {
-        if (mounted) {
-          setEntries([]);
-          setIsLoadingLog(false);
+      const loadLog = async () => {
+        if (!user?.uid) {
+          if (mounted) {
+            setEntries([]);
+            setIsLoadingLog(false);
+          }
+          return;
         }
-        return;
-      }
 
-      setIsLoadingLog(true);
-      try {
-        const log = await loadDailyWorkoutLog(user.uid, selectedDateKey);
-        if (mounted) {
-          setEntries(log.entries);
+        setIsLoadingLog(true);
+        try {
+          const log = await loadDailyWorkoutLog(user.uid, selectedDateKey);
+          if (mounted) {
+            setEntries(log.entries);
+          }
+        } catch (error) {
+          if (!mounted) {
+            showAlert({
+              title: "Could not load workouts",
+              message: getUserFriendlyErrorMessage(
+                error,
+                "Please check your connection and try again.",
+              ),
+            });
+          }
+        } finally {
+          if (mounted) {
+            setIsLoadingLog(false);
+          }
         }
-      } catch (error) {
-        if (!mounted) {
-          showAlert({
-            title: "Could not load workouts",
-            message: getUserFriendlyErrorMessage(
-              error,
-              "Please check your connection and try again.",
-            ),
-          });
-        }
-      } finally {
-        if (mounted) {
-          setIsLoadingLog(false);
-        }
-      }
-    };
+      };
 
-    void loadLog();
+      void loadLog();
 
-    return () => {
-      mounted = false;
-    };
-  }, [selectedDateKey, showAlert, user?.uid]);
+      return () => {
+        mounted = false;
+      };
+    }, [selectedDateKey, showAlert, user?.uid]),
+  );
 
   const resetModalState = () => {
     setEditingEntryId(null);
@@ -365,7 +366,6 @@ export default function WorkoutScreen() {
     setRepsLabel("");
     setSecPerRepLabel("4");
     setRestBetweenSetsSecLabel("75");
-    setSetupSecLabel("90");
     setMinSessionMinLabel("5");
     setIntensity("moderate");
     setIsSavingWorkout(false);
@@ -439,7 +439,6 @@ export default function WorkoutScreen() {
     setRestBetweenSetsSecLabel(
       selectedEntry.restBetweenSetsSec ? formatDuration(selectedEntry.restBetweenSetsSec) : "75",
     );
-    setSetupSecLabel(selectedEntry.setupSec ? formatDuration(selectedEntry.setupSec) : "90");
     setMinSessionMinLabel(
       selectedEntry.minSessionMin ? formatDuration(selectedEntry.minSessionMin) : "5",
     );
@@ -556,7 +555,6 @@ export default function WorkoutScreen() {
     let reps: number | null = null;
     let secPerRep: number | null = null;
     let restBetweenSetsSec: number | null = null;
-    let setupSec: number | null = null;
     let minSessionMin: number | null = null;
 
     if (workoutMode !== "strength") {
@@ -606,15 +604,6 @@ export default function WorkoutScreen() {
         return;
       }
 
-      const parsedSetupSec = toPositiveNumber(setupSecLabel);
-      if (parsedSetupSec === null) {
-        showAlert({
-          title: "Invalid setup time",
-          message: "Setup time must be a positive number.",
-        });
-        return;
-      }
-
       const parsedMinSessionMin = toPositiveNumber(minSessionMinLabel);
       if (parsedMinSessionMin === null) {
         showAlert({
@@ -628,14 +617,12 @@ export default function WorkoutScreen() {
       reps = parsedReps;
       secPerRep = parsedSecPerRep;
       restBetweenSetsSec = parsedRestBetweenSetsSec;
-      setupSec = parsedSetupSec;
       minSessionMin = parsedMinSessionMin;
       durationMin = estimateStrengthDurationMin({
         sets: parsedSets,
         repsPerSet: parsedReps,
         secPerRep: parsedSecPerRep,
         restBetweenSetsSec: parsedRestBetweenSetsSec,
-        setupSec: parsedSetupSec,
         minSessionMin: parsedMinSessionMin,
       });
     }
@@ -684,7 +671,7 @@ export default function WorkoutScreen() {
         reps,
         secPerRep,
         restBetweenSetsSec,
-        setupSec,
+        setupSec: null,
         minSessionMin,
         intensity,
         metRowId: resolution.best.rowId,
@@ -770,7 +757,6 @@ export default function WorkoutScreen() {
         repsLabel,
         secPerRepLabel,
         restBetweenSetsSecLabel,
-        setupSecLabel,
         minSessionMinLabel,
         intensity,
       },
@@ -786,7 +772,6 @@ export default function WorkoutScreen() {
       setRepsLabel,
       setSecPerRepLabel,
       setRestBetweenSetsSecLabel,
-      setSetupSecLabel,
       setMinSessionMinLabel,
       setIntensity,
       handleSaveWorkout,

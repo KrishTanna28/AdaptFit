@@ -25,9 +25,7 @@ function Import-EnvFile {
 
     $Name = $Line.Substring(0, $SeparatorIndex).Trim()
     $Value = $Line.Substring($SeparatorIndex + 1).Trim().Trim('"').Trim("'")
-    if (!(Get-Item -Path "Env:$Name" -ErrorAction SilentlyContinue)) {
-      Set-Item -Path "Env:$Name" -Value $Value
-    }
+    Set-Item -Path "Env:$Name" -Value $Value
   }
 }
 

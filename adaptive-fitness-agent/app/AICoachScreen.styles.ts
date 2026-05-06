@@ -120,6 +120,58 @@ export const styles = StyleSheet.create({
     ...appTheme.typography.body,
     color: appTheme.colors.text,
   },
+  workoutCard: {
+    maxWidth: "94%",
+    borderRadius: appTheme.radii.lg,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    backgroundColor: appTheme.colors.card,
+    padding: appTheme.spacing.md,
+    gap: appTheme.spacing.sm,
+  },
+  workoutCardHeader: {
+    gap: 2,
+  },
+  workoutCardEyebrow: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  workoutCardTitle: {
+    ...appTheme.typography.subheading,
+    color: appTheme.colors.text,
+  },
+  workoutCardSubtitle: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+  },
+  workoutExerciseList: {
+    gap: 8,
+  },
+  workoutExerciseRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: appTheme.spacing.sm,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: appTheme.colors.border,
+  },
+  workoutExerciseName: {
+    ...appTheme.typography.body,
+    color: appTheme.colors.text,
+    fontWeight: "700",
+    flex: 1,
+  },
+  workoutExerciseMeta: {
+    ...appTheme.typography.caption,
+    color: appTheme.colors.mutedText,
+    fontWeight: "600",
+  },
+  workoutCardFooter: {
+    marginTop: 4,
+  },
   speakMessageButton: {
     alignSelf: "flex-start",
     flexDirection: "row",

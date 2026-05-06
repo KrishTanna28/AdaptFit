@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useState } from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import type { User } from "firebase/auth/react-native";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
-import { Pizza, Flame, House, Lightbulb, User as UserIcon } from "lucide-react-native";
+import { Droplets, Pizza, Flame, House, Lightbulb, User as UserIcon } from "lucide-react-native";
 
 import AICoachScreen from "./AICoachScreen";
 import HomeScreen from "./HomeScreen";
+import LifestyleScreen from "./LifestyleScreen";
 import NutritionScreen from "./NutritionScreen";
 import ProfileScreen from "./ProfileScreen";
 import WorkoutScreen from "./WorkoutScreen";
@@ -13,11 +14,12 @@ import useLiveStepCounter, { DAILY_STEP_GOAL } from "../hooks/useLiveStepCounter
 import { db } from "../services/firebase";
 import { appTheme } from "../theme/designSystem";
 
-type HomeTabParamList = {
+export type HomeTabParamList = {
   Home: undefined;
   Activity: undefined;
   Workout: undefined;
   Diet: undefined;
+  Lifestyle: undefined;
   Coach: undefined;
   Profile: undefined;
 };
@@ -199,6 +201,16 @@ export default function HomeTabs({ user }: HomeTabsProps) {
         options={{
           tabBarIcon: ({ color, size }) => (
             <Pizza size={size} color={color} strokeWidth={2.2} />
+          ),
+        }}
+      />
+
+      <Tab.Screen
+        name="Lifestyle"
+        component={LifestyleScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Droplets size={size} color={color} strokeWidth={2.2} />
           ),
         }}
       />

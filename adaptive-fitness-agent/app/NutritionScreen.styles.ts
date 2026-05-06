@@ -86,6 +86,9 @@ export const styles = StyleSheet.create({
   mealActionsRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+    flex: 1,
     gap: appTheme.spacing.sm,
   },
   addMealButton: {
@@ -109,6 +112,31 @@ export const styles = StyleSheet.create({
     aspectRatio: 4 / 3,
     borderRadius: appTheme.radii.md,
     backgroundColor: appTheme.colors.inputBackground,
+  },
+  scannerPermissionBlock: {
+    gap: appTheme.spacing.md,
+  },
+  scannerFrame: {
+    width: "100%",
+    aspectRatio: 3 / 4,
+    borderRadius: appTheme.radii.md,
+    overflow: "hidden",
+    backgroundColor: appTheme.colors.text,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+  },
+  scannerCamera: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  scannerGuide: {
+    position: "absolute",
+    left: "12%",
+    right: "12%",
+    top: "38%",
+    height: 88,
+    borderRadius: appTheme.radii.md,
+    borderWidth: 2,
+    borderColor: appTheme.colors.primary,
   },
 
   entriesList: {
@@ -171,9 +199,29 @@ export const styles = StyleSheet.create({
     padding: appTheme.spacing.lg,
     gap: appTheme.spacing.md,
   },
+  modalHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: appTheme.spacing.md,
+  },
+  modalTitleWrap: {
+    flex: 1,
+    gap: 2,
+  },
   modalTitle: {
     ...appTheme.typography.subheading,
     color: appTheme.colors.text,
+  },
+  modalIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: appTheme.radii.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: appTheme.colors.card,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
   },
 
   fieldLabel: {

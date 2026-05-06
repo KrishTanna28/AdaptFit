@@ -25,7 +25,6 @@ type WorkoutSearchState = {
     repsLabel: string;
     secPerRepLabel: string;
     restBetweenSetsSecLabel: string;
-    setupSecLabel: string;
     minSessionMinLabel: string;
     intensity: MetIntensity;
 };
@@ -47,7 +46,6 @@ type WorkoutSearchModalActions = {
     setRepsLabel: (value: string) => void;
     setSecPerRepLabel: (value: string) => void;
     setRestBetweenSetsSecLabel: (value: string) => void;
-    setSetupSecLabel: (value: string) => void;
     setMinSessionMinLabel: (value: string) => void;
     setIntensity: (value: MetIntensity) => void;
     handleSaveWorkout: () => void;
@@ -99,6 +97,7 @@ export default function WorkoutSearchModal({ controller }: WorkoutSearchModalPro
 
                 <View style={styles.modalCard}>
                     <ScrollView
+                        style={styles.modalScroll}
                         contentContainerStyle={styles.modalContent}
                         keyboardShouldPersistTaps="handled"
                         showsVerticalScrollIndicator={false}
@@ -255,16 +254,6 @@ export default function WorkoutSearchModal({ controller }: WorkoutSearchModalPro
                                         </View>
 
                                         <View style={styles.manualRow}>
-                                            <View style={styles.manualCell}>
-                                                <AppTextField
-                                                    label="Setup time (sec)"
-                                                    placeholder="90"
-                                                    value={search.setupSecLabel}
-                                                    onChangeText={actions.setSetupSecLabel}
-                                                    keyboardType="decimal-pad"
-                                                />
-                                            </View>
-
                                             <View style={styles.manualCell}>
                                                 <AppTextField
                                                     label="Minimum session (min)"

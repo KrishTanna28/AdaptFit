@@ -172,6 +172,50 @@ function normalizeWorkoutEntry(raw, dateKey) {
   };
 }
 
+function toNullableNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeLifestyleLog(raw, dateKey) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const serializableRaw = toSerializable(source);
+  const hydration = source.hydration && typeof source.hydration === "object" ? source.hydration : {};
+  const weather = source.weather && typeof source.weather === "object" ? source.weather : {};
+  const recovery = source.recovery && typeof source.recovery === "object" ? source.recovery : {};
+  const intakeMl = Math.max(0, Math.round(toNumber(hydration.intakeMl, 0)));
+  const goalMl = Math.max(0, Math.round(toNumber(hydration.goalMl, 0)));
+
+  return {
+    dateKey,
+    hydration: {
+      intakeMl,
+      goalMl,
+      progressPercent: goalMl > 0 ? Math.round((intakeMl / goalMl) * 100) : null,
+      updatedAt: typeof hydration.updatedAt === "string" ? hydration.updatedAt : null,
+    },
+    weather: {
+      locationName: typeof weather.locationName === "string" ? weather.locationName : "",
+      temperatureC: toNullableNumber(weather.temperatureC),
+      humidityPercent: toNullableNumber(weather.humidityPercent),
+      condition: typeof weather.condition === "string" ? weather.condition : "mild",
+      fetchedAt: typeof weather.fetchedAt === "string" ? weather.fetchedAt : null,
+    },
+    recovery: {
+      sleepHours: toNullableNumber(recovery.sleepHours),
+      sleepQuality: toNullableNumber(recovery.sleepQuality),
+      stressLevel: toNullableNumber(recovery.stressLevel),
+      notes: typeof recovery.notes === "string" ? recovery.notes : "",
+      loggedAt: typeof recovery.loggedAt === "string" ? recovery.loggedAt : null,
+    },
+    raw: serializableRaw,
+  };
+}
+
 async function loadDayDescriptors(db, uid, collectionName, windowDays, includeAllHistory) {
   const recentDateKeys = buildRecentDateKeys(windowDays);
 
@@ -246,6 +290,26 @@ async function loadEntriesByDate(db, uid, collectionName, dayDescriptors) {
   return dayResults;
 }
 
+async function loadDocumentsByDate(db, uid, collectionName, dayDescriptors) {
+  const dayResults = await Promise.all(
+    dayDescriptors.map(async (dayDescriptor) => {
+      const snapshot = await db
+        .collection("users")
+        .doc(uid)
+        .collection(collectionName)
+        .doc(dayDescriptor.dateKey)
+        .get();
+
+      return {
+        dateKey: dayDescriptor.dateKey,
+        data: snapshot.exists ? { id: snapshot.id, ...snapshot.data() } : dayDescriptor.dayMeta,
+      };
+    }),
+  );
+
+  return dayResults;
+}
+
 function buildDailyNutritionSummary(dateKeys, nutritionEntries) {
   return dateKeys.map((dateKey) => {
     const dayEntries = nutritionEntries.filter((entry) => entry.dateKey === dateKey);
@@ -272,6 +336,25 @@ function buildDailyWorkoutSummary(dateKeys, workoutEntries) {
       activeCalories: Math.round(
         dayEntries.reduce((sum, entry) => sum + Math.max(0, entry.caloriesActive), 0),
       ),
+    };
+  });
+}
+
+function buildDailyLifestyleSummary(dateKeys, lifestyleLogs) {
+  return dateKeys.map((dateKey) => {
+    const log = lifestyleLogs.find((entry) => entry.dateKey === dateKey);
+
+    return {
+      dateKey,
+      hydrationMl: log?.hydration.intakeMl ?? 0,
+      hydrationGoalMl: log?.hydration.goalMl ?? 0,
+      hydrationProgressPercent: log?.hydration.progressPercent ?? null,
+      sleepHours: log?.recovery.sleepHours ?? null,
+      sleepQuality: log?.recovery.sleepQuality ?? null,
+      stressLevel: log?.recovery.stressLevel ?? null,
+      weatherCondition: log?.weather.condition ?? null,
+      temperatureC: log?.weather.temperatureC ?? null,
+      humidityPercent: log?.weather.humidityPercent ?? null,
     };
   });
 }
@@ -324,7 +407,7 @@ function buildRecencySummary(input) {
 
 function buildSignals(input) {
   const signals = [];
-  const { profile, workoutSummary, nutritionSummary, stepGoal, recency } = input;
+  const { profile, workoutSummary, nutritionSummary, lifestyleSummary, stepGoal, recency } = input;
 
   if (!nutritionSummary.totalMealsLogged) {
     signals.push("No nutrition logs in the selected window.");
@@ -360,6 +443,43 @@ function buildSignals(input) {
     signals.push("User has an ambitious daily step target.");
   }
 
+  const todayLifestyle = lifestyleSummary?.daily?.find(
+    (day) => day.dateKey === recency?.currentDateKey,
+  );
+
+  if (todayLifestyle) {
+    if (
+      (typeof todayLifestyle.sleepHours === "number" && todayLifestyle.sleepHours > 0 && todayLifestyle.sleepHours < 6) ||
+      (typeof todayLifestyle.sleepQuality === "number" && todayLifestyle.sleepQuality <= 2)
+    ) {
+      signals.push("Poor sleep recovery logged today. Coach should reduce intensity and be more lenient.");
+    }
+
+    if (typeof todayLifestyle.stressLevel === "number" && todayLifestyle.stressLevel >= 4) {
+      signals.push("High stress logged today. Coach should favor low-friction, recovery-aware guidance.");
+    }
+
+    if (
+      typeof todayLifestyle.hydrationProgressPercent === "number" &&
+      todayLifestyle.hydrationGoalMl > 0 &&
+      todayLifestyle.hydrationProgressPercent < 70
+    ) {
+      signals.push("Hydration is behind today's adaptive goal.");
+    }
+
+    if (
+      todayLifestyle.weatherCondition === "hot" ||
+      todayLifestyle.weatherCondition === "humid" ||
+      (typeof todayLifestyle.temperatureC === "number" && todayLifestyle.temperatureC >= 30)
+    ) {
+      signals.push("Hot or humid weather is logged today. Hydration and heat management matter.");
+    }
+  }
+
+  if (lifestyleSummary?.poorRecoveryDays > 0) {
+    signals.push("Recent lifestyle logs include poor recovery days; avoid aggressive coaching defaults.");
+  }
+
   if (!signals.length) {
     signals.push("Training and nutrition logging are active. Focus on consistency improvements.");
   }
@@ -383,14 +503,16 @@ export async function loadCoachContext(db, uid, options = {}) {
   const profile = parseProfile(userData.profile);
   const stepGoal = toNumber(userData.dailyStepGoal, 0) || null;
 
-  const [nutritionDayDescriptors, workoutDayDescriptors] = await Promise.all([
+  const [nutritionDayDescriptors, workoutDayDescriptors, lifestyleDayDescriptors] = await Promise.all([
     loadDayDescriptors(db, uid, "nutritionLogs", windowDays, includeAllHistory),
     loadDayDescriptors(db, uid, "workoutLogs", windowDays, includeAllHistory),
+    loadDayDescriptors(db, uid, "lifestyleLogs", windowDays, includeAllHistory),
   ]);
 
-  const [nutritionByDateRaw, workoutByDateRaw] = await Promise.all([
+  const [nutritionByDateRaw, workoutByDateRaw, lifestyleByDateRaw] = await Promise.all([
     loadEntriesByDate(db, uid, "nutritionLogs", nutritionDayDescriptors),
     loadEntriesByDate(db, uid, "workoutLogs", workoutDayDescriptors),
+    loadDocumentsByDate(db, uid, "lifestyleLogs", lifestyleDayDescriptors),
   ]);
 
   const nutritionByDate = nutritionByDateRaw.map((day) => ({
@@ -417,9 +539,19 @@ export async function loadCoachContext(db, uid, options = {}) {
     .flatMap((day) => day.entries)
     .sort((a, b) => String(a.loggedAt ?? "").localeCompare(String(b.loggedAt ?? "")));
 
+  const lifestyleByDate = lifestyleByDateRaw.map((day) => ({
+    dateKey: day.dateKey,
+    log: normalizeLifestyleLog(day.data, day.dateKey),
+  }));
+
+  const lifestyleLogs = lifestyleByDate
+    .map((day) => day.log)
+    .sort((a, b) => String(a.dateKey ?? "").localeCompare(String(b.dateKey ?? "")));
+
   const nutritionDateKeys = nutritionByDate.map((day) => day.dateKey);
   const workoutDateKeys = workoutByDate.map((day) => day.dateKey);
-  const mergedDateKeys = Array.from(new Set([...nutritionDateKeys, ...workoutDateKeys])).sort();
+  const lifestyleDateKeys = lifestyleByDate.map((day) => day.dateKey);
+  const mergedDateKeys = Array.from(new Set([...nutritionDateKeys, ...workoutDateKeys, ...lifestyleDateKeys])).sort();
 
   const averagingDays = Math.max(
     1,
@@ -474,6 +606,74 @@ export async function loadCoachContext(db, uid, options = {}) {
     entriesByDay: workoutByDate,
   };
 
+  const hydrationLogs = lifestyleLogs.filter(
+    (entry) => entry.hydration.intakeMl > 0 || entry.hydration.goalMl > 0,
+  );
+  const recoveryLogs = lifestyleLogs.filter(
+    (entry) =>
+      entry.recovery.sleepHours !== null ||
+      entry.recovery.sleepQuality !== null ||
+      entry.recovery.stressLevel !== null ||
+      entry.recovery.notes,
+  );
+  const sleepLogs = recoveryLogs.filter((entry) => typeof entry.recovery.sleepHours === "number");
+  const stressLogs = recoveryLogs.filter((entry) => typeof entry.recovery.stressLevel === "number");
+  const hydrationProgressLogs = hydrationLogs.filter(
+    (entry) => typeof entry.hydration.progressPercent === "number",
+  );
+
+  const poorRecoveryDays = recoveryLogs.filter((entry) => {
+    const sleepHours = entry.recovery.sleepHours;
+    const sleepQuality = entry.recovery.sleepQuality;
+    const stressLevel = entry.recovery.stressLevel;
+    return (
+      (typeof sleepHours === "number" && sleepHours > 0 && sleepHours < 6) ||
+      (typeof sleepQuality === "number" && sleepQuality <= 2) ||
+      (typeof stressLevel === "number" && stressLevel >= 4)
+    );
+  }).length;
+
+  const lifestyleSummary = {
+    daysLogged: lifestyleLogs.filter((entry) =>
+      entry.hydration.intakeMl > 0 ||
+      entry.recovery.sleepHours !== null ||
+      entry.recovery.sleepQuality !== null ||
+      entry.recovery.stressLevel !== null ||
+      entry.weather.temperatureC !== null ||
+      entry.weather.humidityPercent !== null,
+    ).length,
+    hydrationDays: hydrationLogs.length,
+    avgHydrationProgressPercent: hydrationProgressLogs.length
+      ? Math.round(
+          hydrationProgressLogs.reduce(
+            (sum, entry) => sum + toNumber(entry.hydration.progressPercent, 0),
+            0,
+          ) / hydrationProgressLogs.length,
+        )
+      : null,
+    recoveryDays: recoveryLogs.length,
+    avgSleepHours: sleepLogs.length
+      ? Number(
+          (
+            sleepLogs.reduce((sum, entry) => sum + toNumber(entry.recovery.sleepHours, 0), 0) /
+            sleepLogs.length
+          ).toFixed(1),
+        )
+      : null,
+    avgStressLevel: stressLogs.length
+      ? Number(
+          (
+            stressLogs.reduce((sum, entry) => sum + toNumber(entry.recovery.stressLevel, 0), 0) /
+            stressLogs.length
+          ).toFixed(1),
+        )
+      : null,
+    poorRecoveryDays,
+    daily: buildDailyLifestyleSummary(lifestyleDateKeys, lifestyleLogs),
+    allEntries: lifestyleLogs,
+    entriesByDay: lifestyleByDate,
+  };
+
   const recency = buildRecencySummary({
     currentDateKey,
     nutritionEntries,
@@ -484,6 +684,7 @@ export async function loadCoachContext(db, uid, options = {}) {
     profile,
     workoutSummary,
     nutritionSummary,
+    lifestyleSummary,
     stepGoal,
     recency,
   });
@@ -512,6 +713,7 @@ export async function loadCoachContext(db, uid, options = {}) {
     recency,
     nutrition: nutritionSummary,
     workouts: workoutSummary,
+    lifestyle: lifestyleSummary,
     signals,
   };
 }

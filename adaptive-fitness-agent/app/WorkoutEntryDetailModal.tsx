@@ -81,7 +81,6 @@ export default function WorkoutEntryDetailModal({
                     <Text style={styles.entryMeta}>
                       Rest between sets (sec): {String(entry.restBetweenSetsSec ?? "--")}
                     </Text>
-                    <Text style={styles.entryMeta}>Setup time (sec): {String(entry.setupSec ?? "--")}</Text>
                     <Text style={styles.entryMeta}>
                       Minimum session (min): {String(entry.minSessionMin ?? "--")}
                     </Text>

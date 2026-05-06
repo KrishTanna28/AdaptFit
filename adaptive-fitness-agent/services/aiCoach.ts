@@ -2,16 +2,29 @@ import { auth } from "./firebase";
 
 export type CoachMessageRole = "user" | "assistant";
 
+export type CoachWorkoutExercise = {
+  name: string;
+  sets: number;
+  reps: number;
+};
+
+export type CoachWorkoutPlan = {
+  title: string;
+  exercises: CoachWorkoutExercise[];
+};
+
 export type CoachChatMessage = {
   id: string;
   role: CoachMessageRole;
   content: string;
   createdAt: string;
+  workoutPlan?: CoachWorkoutPlan;
 };
 
 type CoachChatResponse = {
   conversationId: string;
   reply: string;
+  workoutPlan?: CoachWorkoutPlan;
   model?: string;
   usage?: {
     promptTokenCount: number;

@@ -6,7 +6,7 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { CalendarDays, Camera, ChevronDown, Plus } from "lucide-react-native";
+import { Barcode, Camera, CalendarDays, ChevronDown, Link, Plus } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import NutritionScreenModal, {
   type NutritionScreenModalController,
@@ -20,10 +20,13 @@ import {
 import { useAuthUser } from "../hooks/useAuthUser";
 import {
   analyzePlateFoodImage,
+  getFoodByBarcode,
+  parseRecipeUrl,
   searchFoodCatalog,
   type FoodCatalogItem,
   type MealType,
   type PlateFoodAnalysisResult,
+  type RecipeNutritionResult,
 } from "../services/nutritionApi";
 import {
   loadDailyNutritionLog,
@@ -37,7 +40,9 @@ import { styles } from "./NutritionScreen.styles";
 import NutritionEntryDetailModal from "./NutritionEntryDetailModal";
 import { getTodayDateKey } from "../services/helperFunctions"
 import DatePickerModal from "./DatePickerModal";
+import BarcodeFoodScannerModal from "./BarcodeFoodScannerModal";
 import PlateFoodCaptureModal from "./PlateFoodCaptureModal";
+import RecipeImportModal from "./RecipeImportModal";
 
 const MEAL_ORDER: MealType[] = ["breakfast", "lunch", "dinner", "snacks"];
 const MEAL_LABELS: Record<MealType, string> = {
@@ -97,6 +102,20 @@ type PlateCaptureDraft = {
   isAnalyzing: boolean;
 };
 
+type BarcodeScannerDraft = {
+  visible: boolean;
+  meal: MealType;
+  isResolving: boolean;
+};
+
+type RecipeImportDraft = {
+  visible: boolean;
+  meal: MealType;
+  url: string;
+  servings: string;
+  isParsing: boolean;
+};
+
 const initialNutritionSearchState: NutritionSearchState = {
   query: "",
   isSearching: false,
@@ -141,6 +160,20 @@ const initialPlateCaptureDraft: PlateCaptureDraft = {
   isAnalyzing: false,
 };
 
+const initialBarcodeScannerDraft: BarcodeScannerDraft = {
+  visible: false,
+  meal: "breakfast",
+  isResolving: false,
+};
+
+const initialRecipeImportDraft: RecipeImportDraft = {
+  visible: false,
+  meal: "breakfast",
+  url: "",
+  servings: "1",
+  isParsing: false,
+};
+
 type NutritionModalDraftAction =
   | { type: "OPEN_ADD"; meal: MealType }
   | {
@@ -148,6 +181,15 @@ type NutritionModalDraftAction =
     payload: {
       selectedMeal: MealType;
       manual: NutritionManualState;
+      quantity?: number;
+      quantityInput?: string;
+    };
+  }
+  | {
+    type: "OPEN_CATALOG_ITEM";
+    payload: {
+      selectedMeal: MealType;
+      item: FoodCatalogItem;
     };
   }
   | {
@@ -189,9 +231,22 @@ function nutritionModalDraftReducer(
         isModalVisible: true,
         selectedMeal: action.payload.selectedMeal,
         entryMode: "manual",
-        quantity: 1,
-        quantityInput: "1",
+        quantity: action.payload.quantity ?? 1,
+        quantityInput: action.payload.quantityInput ?? "1",
         manual: { ...action.payload.manual },
+      };
+    case "OPEN_CATALOG_ITEM":
+      return {
+        ...initialNutritionModalDraftState,
+        isModalVisible: true,
+        selectedMeal: action.payload.selectedMeal,
+        entryMode: "search",
+        search: {
+          ...initialNutritionSearchState,
+          query: action.payload.item.name,
+          results: [action.payload.item],
+          selectedFoodId: action.payload.item.id,
+        },
       };
     case "OPEN_EDIT_MANUAL":
       return {
@@ -261,6 +316,16 @@ function formatManualNumber(value: number) {
   return formatQuantity(roundOne(Number.isFinite(value) ? value : 0));
 }
 
+function getPlateAnalysisErrorMessage(error: unknown) {
+  const mapped = getUserFriendlyErrorMessage(error, "").trim();
+  if (mapped) {
+    return mapped;
+  }
+
+  const detail = error instanceof Error ? error.message.trim() : "";
+  return detail || "Check that the plate-analysis service is running and try again.";
+}
+
 function buildPlateManualState(result: PlateFoodAnalysisResult): NutritionManualState {
   const names = result.items
     .map((item) => {
@@ -288,6 +353,22 @@ function buildPlateManualState(result: PlateFoodAnalysisResult): NutritionManual
     calciumMg: formatManualNumber(result.totals.calciumMg),
     ironMg: formatManualNumber(result.totals.ironMg),
     vitaminCMg: formatManualNumber(result.totals.vitaminCMg),
+  };
+}
+
+function buildRecipeManualState(result: RecipeNutritionResult): NutritionManualState {
+  return {
+    name: result.title ? "Recipe: " + result.title : "Recipe import",
+    calories: formatManualNumber(result.calories),
+    protein: formatManualNumber(result.protein),
+    carbs: formatManualNumber(result.carbs),
+    fat: formatManualNumber(result.fat),
+    fiber: formatManualNumber(result.fiber),
+    sodiumMg: formatManualNumber(result.sodiumMg),
+    potassiumMg: formatManualNumber(result.potassiumMg),
+    calciumMg: formatManualNumber(result.calciumMg),
+    ironMg: formatManualNumber(result.ironMg),
+    vitaminCMg: formatManualNumber(result.vitaminCMg),
   };
 }
 
@@ -362,6 +443,8 @@ export default function NutritionScreen() {
     initialNutritionModalDraftState,
   );
   const [plateDraft, setPlateDraft] = useState<PlateCaptureDraft>(initialPlateCaptureDraft);
+  const [barcodeDraft, setBarcodeDraft] = useState<BarcodeScannerDraft>(initialBarcodeScannerDraft);
+  const [recipeDraft, setRecipeDraft] = useState<RecipeImportDraft>(initialRecipeImportDraft);
 
   const {
     isModalVisible,
@@ -671,6 +754,129 @@ export default function NutritionScreen() {
     dispatchModalDraft({ type: "OPEN_ADD", meal });
   };
 
+  const openBarcodeScanner = (meal: MealType) => {
+    if (!ensureEditableDate()) return;
+
+    if (!user?.uid) {
+      showAlert({
+        title: "Sign-in required",
+        message: "Please sign in to scan foods.",
+      });
+      return;
+    }
+
+    setBarcodeDraft({
+      visible: true,
+      meal,
+      isResolving: false,
+    });
+  };
+
+  const closeBarcodeScanner = () => {
+    if (barcodeDraft.isResolving) return;
+    setBarcodeDraft(initialBarcodeScannerDraft);
+  };
+
+  const handleBarcodeScanned = async (barcodeValue: string) => {
+    setBarcodeDraft((prev) => ({ ...prev, isResolving: true }));
+
+    try {
+      const item = await getFoodByBarcode(barcodeValue);
+      dispatchModalDraft({
+        type: "OPEN_CATALOG_ITEM",
+        payload: {
+          selectedMeal: barcodeDraft.meal,
+          item,
+        },
+      });
+      setBarcodeDraft(initialBarcodeScannerDraft);
+    } catch (error) {
+      showAlert({
+        title: "Barcode lookup failed",
+        message: getUserFriendlyErrorMessage(
+          error,
+          "No nutrition match found. Try food search or manual entry.",
+        ),
+      });
+      setBarcodeDraft((prev) => ({ ...prev, isResolving: false }));
+    }
+  };
+
+  const openRecipeImport = (meal: MealType) => {
+    if (!ensureEditableDate()) return;
+
+    if (!user?.uid) {
+      showAlert({
+        title: "Sign-in required",
+        message: "Please sign in to import recipes.",
+      });
+      return;
+    }
+
+    setRecipeDraft({
+      ...initialRecipeImportDraft,
+      visible: true,
+      meal,
+    });
+  };
+
+  const closeRecipeImport = () => {
+    if (recipeDraft.isParsing) return;
+    setRecipeDraft(initialRecipeImportDraft);
+  };
+
+  const handleRecipeServingsChange = (raw: string) => {
+    setRecipeDraft((prev) => ({
+      ...prev,
+      servings: sanitizeDecimalLabel(raw),
+    }));
+  };
+
+  const handleParseRecipe = async () => {
+    const url = recipeDraft.url.trim();
+    const servings = Number(recipeDraft.servings);
+    const quantity = Number.isFinite(servings) && servings > 0
+      ? clampQuantity(servings)
+      : 1;
+
+    if (!/^https?:\/\//i.test(url)) {
+      showAlert({
+        title: "Recipe link needed",
+        message: "Enter a recipe URL that starts with http or https.",
+      });
+      return;
+    }
+
+    setRecipeDraft((prev) => ({ ...prev, isParsing: true }));
+
+    try {
+      const recipe = await parseRecipeUrl({
+        url,
+        servings: quantity,
+      });
+
+      dispatchModalDraft({
+        type: "OPEN_PLATE_MANUAL",
+        payload: {
+          selectedMeal: recipeDraft.meal,
+          manual: buildRecipeManualState(recipe),
+          quantity,
+          quantityInput: formatQuantity(quantity),
+        },
+      });
+      setRecipeDraft(initialRecipeImportDraft);
+    } catch (error) {
+      showAlert({
+        title: "Recipe parse failed",
+        message: getUserFriendlyErrorMessage(
+          error,
+          "This recipe may not expose nutrition data. Try another link or enter macros manually.",
+        ),
+      });
+      setRecipeDraft((prev) => ({ ...prev, isParsing: false }));
+    }
+  };
+
   const closePlateCaptureModal = () => {
     if (plateDraft.isAnalyzing) return;
     setPlateDraft(initialPlateCaptureDraft);
@@ -705,7 +911,7 @@ export default function NutritionScreen() {
 
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: false,
-      quality: 0.45,
+      quality: 0.75,
       base64: true,
     });
 
@@ -786,10 +992,7 @@ export default function NutritionScreen() {
     } catch (error) {
       showAlert({
         title: "Plate analysis failed",
-        message: getUserFriendlyErrorMessage(
-          error,
-          "Check that the plate-analysis service is running and try again.",
-        ),
+        message: getPlateAnalysisErrorMessage(error),
       });
     } finally {
       setPlateDraft((prev) => (
@@ -1169,6 +1372,26 @@ export default function NutritionScreen() {
 
                       <Pressable
                         style={styles.addMealButton}
+                        onPress={() => openBarcodeScanner(meal)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Scan ${MEAL_LABELS[meal]} barcode`}
+                      >
+                        <Barcode size={14} color={appTheme.colors.text} strokeWidth={2.4} />
+                        <Text style={styles.addMealText}>Scan</Text>
+                      </Pressable>
+
+                      <Pressable
+                        style={styles.addMealButton}
+                        onPress={() => openRecipeImport(meal)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Import ${MEAL_LABELS[meal]} recipe link`}
+                      >
+                        <Link size={14} color={appTheme.colors.text} strokeWidth={2.4} />
+                        <Text style={styles.addMealText}>Link</Text>
+                      </Pressable>
+
+                      <Pressable
+                        style={styles.addMealButton}
                         onPress={() => openAddModal(meal)}
                         accessibilityRole="button"
                         accessibilityLabel={`Add ${MEAL_LABELS[meal]} entry`}
@@ -1232,6 +1455,27 @@ export default function NutritionScreen() {
         onRetake={handleRetakePlatePhoto}
         onClose={closePlateCaptureModal}
       />
+      <BarcodeFoodScannerModal
+        visible={barcodeDraft.visible}
+        isResolving={barcodeDraft.isResolving}
+        onBarcode={(value) => {
+          void handleBarcodeScanned(value);
+        }}
+        onClose={closeBarcodeScanner}
+      />
+      <RecipeImportModal
+        visible={recipeDraft.visible}
+        meal={recipeDraft.meal}
+        url={recipeDraft.url}
+        servings={recipeDraft.servings}
+        isParsing={recipeDraft.isParsing}
+        onChangeUrl={(value) => setRecipeDraft((prev) => ({ ...prev, url: value }))}
+        onChangeServings={handleRecipeServingsChange}
+        onParse={() => {
+          void handleParseRecipe();
+        }}
+        onClose={closeRecipeImport}
+      />
       <NutritionScreenModal controller={nutritionModalController} />
       <NutritionEntryDetailModal 
       visible={isEntryDetailVisible} 
@@ -1243,4 +1487,13 @@ export default function NutritionScreen() {
       onDeleteEntry={handleDeleteSelectedEntry} />
     </SafeAreaView>
   );
+}
+
+function sanitizeDecimalLabel(raw: string) {
+  const normalized = raw.replace(",", ".").replace(/[^0-9.]/g, "");
+  const firstDot = normalized.indexOf(".");
+  if (firstDot < 0) {
+    return normalized;
+  }
+  return normalized.slice(0, firstDot + 1) + normalized.slice(firstDot + 1).replace(/\./g, "");
 }
