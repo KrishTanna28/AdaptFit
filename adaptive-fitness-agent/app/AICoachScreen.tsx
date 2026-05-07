@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react-native";
 import { doc, getDoc } from "firebase/firestore";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AppButton from "../components/ui/AppButton";
 import { getUserFriendlyErrorMessage, useAppAlert } from "../components/ui/AppAlert";
@@ -273,6 +274,7 @@ export default function AICoachScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<HomeTabParamList>>();
   const chatScrollRef = useRef<ScrollView | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const insets = useSafeAreaInsets();
 
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [messages, setMessages] = useState<CoachChatMessage[]>([STARTER_MESSAGE]);
@@ -645,7 +647,7 @@ export default function AICoachScreen() {
           datasetVersion: resolution.datasetVersion,
           resolverVersion: resolution.resolverVersion,
           mappingSource: resolution.shouldConfirm ? "auto-needs-review" : "auto",
-        }).catch(() => {});
+        }).catch(() => { });
 
         savedEntries.push(entry);
       }
@@ -777,43 +779,17 @@ export default function AICoachScreen() {
 
   return (
     <SafeAreaView style={globalStyles.screen} edges={["top", "left", "right"]}>
-      <KeyboardAvoidingView
-        style={styles.screenContent}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+  <KeyboardAvoidingView
+    style={styles.screenContent}
+    behavior={Platform.OS === "ios" ? "padding" : "height"}
+    keyboardVerticalOffset={0}
+  >
         <View style={styles.headerRow}>
           <View style={styles.headerTextWrap}>
             <Text style={styles.title}>AI Coach</Text>
             <Text style={styles.subtitle}>Chat with your adaptive coach</Text>
           </View>
         </View>
-
-        {/* <View style={styles.quickPromptRow}>
-          {QUICK_PROMPTS.map((prompt) => (
-            <Pressable
-              key={prompt}
-              style={[styles.quickPromptChip, isSending ? styles.quickPromptChipDisabled : null]}
-              onPress={() => {
-                handleSend(prompt).catch(() => {
-                  // handled in handleSend
-                });
-              }}
-              disabled={isSending}
-            >
-              <Text style={styles.quickPromptText}>{prompt}</Text>
-            </Pressable>
-          ))}
-        </View> */}
-
-        {contextSignals.length ? (
-          <View style={styles.signalsCard}>
-            {contextSignals.map((signal, index) => (
-              <Text key={`signal-${index}`} style={styles.signalText}>
-                • {signal}
-              </Text>
-            ))}
-          </View>
-        ) : null}
 
         <ScrollView
           ref={chatScrollRef}
@@ -888,7 +864,9 @@ export default function AICoachScreen() {
                     isAssistant ? styles.assistantBubble : styles.userBubble,
                   ]}
                 >
-                  <Text style={styles.messageText}>{message.content}</Text>
+                  <Text style={[styles.messageText, !isAssistant ? styles.userMessageText : null]}>
+                    {message.content}
+                  </Text>
 
                   {isAssistant ? (
                     <Pressable
@@ -898,9 +876,9 @@ export default function AICoachScreen() {
                       }}
                     >
                       {speakingMessageId === message.id ? (
-                        <VolumeX size={14} color={appTheme.colors.mutedText} strokeWidth={2.2} />
+                        <VolumeX size={14} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
                       ) : (
-                        <Volume2 size={14} color={appTheme.colors.mutedText} strokeWidth={2.2} />
+                        <Volume2 size={14} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
                       )}
                       <Text style={styles.speakMessageButtonText}>
                         {speakingMessageId === message.id ? "Stop" : "Speak"}
@@ -915,7 +893,7 @@ export default function AICoachScreen() {
           {isSending ? (
             <View style={[styles.messageRow, styles.assistantRow]}>
               <View style={[styles.messageBubble, styles.assistantBubble, styles.thinkingBubble]}>
-                <ActivityIndicator size="small" color={appTheme.colors.mutedText} />
+                <ActivityIndicator size="small" color={appTheme.colors.primary} />
                 <Text style={styles.thinkingText}>Coach is thinking...</Text>
               </View>
             </View>
@@ -929,7 +907,7 @@ export default function AICoachScreen() {
                 <View key={attachment.id} style={styles.attachmentChip}>
                   <Text style={styles.attachmentText}>{toAttachmentPreviewLabel(attachment)}</Text>
                   <Pressable onPress={() => removeAttachment(attachment.id)}>
-                    <X size={14} color={appTheme.colors.mutedText} strokeWidth={2.2} />
+                    <X size={14} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
                   </Pressable>
                 </View>
               ))}
@@ -947,9 +925,9 @@ export default function AICoachScreen() {
               disabled={isPickingFile || isSending}
             >
               {isPickingFile ? (
-                <ActivityIndicator size="small" color={appTheme.colors.mutedText} />
+                <ActivityIndicator size="small" color={appTheme.colors.primary} />
               ) : (
-                <Paperclip size={18} color={appTheme.colors.mutedText} strokeWidth={2.2} />
+                <Paperclip size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
               )}
             </Pressable>
 
@@ -963,9 +941,9 @@ export default function AICoachScreen() {
               disabled={isSending || isTranscribing}
             >
               {isRecording ? (
-                <Square size={16} color={appTheme.colors.text} strokeWidth={2.2} />
+                <Square size={16} color={appTheme.colors.card} strokeWidth={2.2} />
               ) : (
-                <Mic size={18} color={appTheme.colors.mutedText} strokeWidth={2.2} />
+                <Mic size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
               )}
             </Pressable>
 
@@ -974,7 +952,7 @@ export default function AICoachScreen() {
               onChangeText={setDraftMessage}
               style={styles.input}
               placeholder="Message your coach"
-              placeholderTextColor="#736A6A"
+              placeholderTextColor={appTheme.colors.textMuted}
               multiline
               editable={!isSending && !isTranscribing}
               maxLength={1800}
@@ -991,7 +969,7 @@ export default function AICoachScreen() {
             >
               <SendHorizontal
                 size={18}
-                color={!canSend ? appTheme.colors.mutedText : appTheme.colors.text}
+                color={!canSend ? appTheme.colors.textMuted : appTheme.colors.card}
                 strokeWidth={2.2}
               />
             </Pressable>

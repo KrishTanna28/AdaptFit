@@ -66,7 +66,7 @@ function DatePickerModalImpl({
       [draftDateKey]: {
         selected: true,
         selectedColor: appTheme.colors.primary,
-        selectedTextColor: appTheme.colors.text,
+        selectedTextColor: appTheme.colors.card,
       },
     }),
     [draftDateKey],
@@ -150,12 +150,12 @@ function DatePickerModalImpl({
               hideExtraDays
               disableAllTouchEventsForDisabledDays
               theme={{
-                calendarBackground: appTheme.colors.cardAlt,
-                monthTextColor: appTheme.colors.text,
-                dayTextColor: appTheme.colors.text,
-                textDisabledColor: appTheme.colors.mutedText,
-                todayTextColor: appTheme.colors.secondary,
-                arrowColor: appTheme.colors.text,
+                calendarBackground: appTheme.colors.card,
+                monthTextColor: appTheme.colors.textPrimary,
+                dayTextColor: appTheme.colors.textPrimary,
+                textDisabledColor: appTheme.colors.textMuted,
+                todayTextColor: appTheme.colors.primary,
+                arrowColor: appTheme.colors.primary,
               }}
             />
           </ScrollView>

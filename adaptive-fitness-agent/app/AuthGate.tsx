@@ -24,7 +24,7 @@ export default function AuthGate() {
   if (loading) {
     return (
       <View style={styles.loaderScreen}>
-        <ActivityIndicator size="large" color={appTheme.colors.text} />
+        <ActivityIndicator size="large" color={appTheme.colors.primary} />
       </View>
     );
   }

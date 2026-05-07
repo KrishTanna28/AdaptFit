@@ -102,14 +102,7 @@ export default function WorkoutSearchModal({ controller }: WorkoutSearchModalPro
                         keyboardShouldPersistTaps="handled"
                         showsVerticalScrollIndicator={false}
                     >
-                        <View
-                            style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                gap: appTheme.spacing.md,
-                            }}
-                        >
+                        <View style={styles.heroTopRow}>
                             <Text style={styles.modalTitle}>{modalTitle ?? "Add workout"}</Text>
 
                             <Pressable
@@ -117,18 +110,9 @@ export default function WorkoutSearchModal({ controller }: WorkoutSearchModalPro
                                 accessibilityLabel="Close modal"
                                 disabled={isSaving}
                                 onPress={actions.onClose}
-                                style={{
-                                    width: 36,
-                                    height: 36,
-                                    borderRadius: appTheme.radii.pill,
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    backgroundColor: appTheme.colors.card,
-                                    borderWidth: 1,
-                                    borderColor: appTheme.colors.border,
-                                }}
+                                style={styles.modalIconButton}
                             >
-                                <X size={18} color={appTheme.colors.text} strokeWidth={2.2} />
+                                <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
                             </Pressable>
                         </View>
                         <View style={styles.block}>

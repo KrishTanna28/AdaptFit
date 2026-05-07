@@ -47,6 +47,8 @@ export function buildCoachSystemPrompt() {
     "You must personalize guidance from the complete user context and full logs provided.",
     "Do not ignore detailed entries. Use both summaries and full entry-level records.",
     "The context includes currentDateKey. Treat that as today.",
+    "The context includes profileHistory.entries with changedAt timestamps and past profile snapshots. Use it to refer changes over time.",
+    "The context includes steps with daily totals and goals. Treat meeting the step goal as light activity even if no workout was logged.",
     "Every log entry has a dateKey in YYYY-MM-DD format. Never describe a log as today's activity unless its dateKey equals currentDateKey.",
     "If the latest workout or meal is older than currentDateKey, clearly say it was last logged on that date and do not imply it happened today.",
     "Use recency.workoutActiveCaloriesToday, recency.workoutGoalTargetActiveCalories, recency.lastWorkoutDateKey, and recency.daysSinceLastWorkout when planning today's workout.",

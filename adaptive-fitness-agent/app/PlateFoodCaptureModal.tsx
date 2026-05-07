@@ -70,18 +70,9 @@ export default function PlateFoodCaptureModal({
                 accessibilityLabel="Close plate analysis"
                 disabled={isAnalyzing}
                 onPress={onClose}
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: appTheme.radii.pill,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: appTheme.colors.card,
-                  borderWidth: 1,
-                  borderColor: appTheme.colors.border,
-                }}
+                style={styles.modalIconButton}
               >
-                <X size={18} color={appTheme.colors.text} strokeWidth={2.2} />
+                <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
               </Pressable>
             </View>
 

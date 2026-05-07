@@ -9,7 +9,8 @@ export const globalStyles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: appTheme.spacing.lg,
-    paddingVertical: appTheme.spacing.xl,
+    paddingTop: appTheme.spacing.lg,
+    paddingBottom: appTheme.spacing.xxl,
   },
   centered: {
     justifyContent: "center",
@@ -17,14 +18,18 @@ export const globalStyles = StyleSheet.create({
   },
   row: {
     flexDirection: "row",
+    alignItems: "center",
+    gap: appTheme.spacing.sm,
   },
   rowWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
+    gap: appTheme.spacing.sm,
   },
   pill: {
     borderRadius: appTheme.radii.pill,
-    paddingHorizontal: appTheme.spacing.md,
-    paddingVertical: appTheme.spacing.xs,
+    paddingHorizontal: appTheme.spacing.lg,
+    paddingVertical: appTheme.spacing.sm,
+    backgroundColor: appTheme.colors.subtlePressed,
   },
 });

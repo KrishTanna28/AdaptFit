@@ -1,5 +1,6 @@
 import React from "react";
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
+import { StatusBar } from "expo-status-bar";
 
 import AuthGate from "./app/AuthGate";
 import { AppAlertProvider } from "./components/ui/AppAlert";
@@ -11,7 +12,7 @@ const navigationTheme = {
     ...DefaultTheme.colors,
     background: appTheme.colors.background,
     card: appTheme.colors.background,
-    text: appTheme.colors.text,
+    text: appTheme.colors.textPrimary,
     border: appTheme.colors.background,
     primary: appTheme.colors.primary,
   },
@@ -20,6 +21,7 @@ const navigationTheme = {
 export default function App() {
   return (
     <AppAlertProvider>
+      <StatusBar style="dark" />
       <NavigationContainer theme={navigationTheme}>
         <AuthGate />
       </NavigationContainer>

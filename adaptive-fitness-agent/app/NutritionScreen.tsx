@@ -1174,11 +1174,11 @@ export default function NutritionScreen() {
                 hitSlop={8}
               >
                 <View style={styles.datePickerLeft}>
-                  <CalendarDays size={16} color={appTheme.colors.mutedText} strokeWidth={2.2} />
+                  <CalendarDays size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
                   <Text style={styles.datePickerValue}>{formatDateForDisplay(selectedDateKey)}</Text>
                 </View>
 
-                <ChevronDown size={16} color={appTheme.colors.mutedText} strokeWidth={2.2} />
+                <ChevronDown size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
               </Pressable>
             </View>
           </AppCard>
@@ -1190,21 +1190,33 @@ export default function NutritionScreen() {
               <View style={styles.macroItem}>
                 <Text style={styles.macroValue}>{Math.round(totals.calories)} kcal</Text>
                 <Text style={styles.macroLabel}>Calories</Text>
+                <View style={styles.macroProgressTrack}>
+                  <View style={[styles.macroProgressFill, { width: "100%" }]} />
+                </View>
               </View>
 
               <View style={styles.macroItem}>
                 <Text style={styles.macroValue}>{roundOne(totals.protein)} g</Text>
                 <Text style={styles.macroLabel}>Protein</Text>
+                <View style={styles.macroProgressTrack}>
+                  <View style={[styles.macroProgressFill, styles.macroProgressProtein, { width: "100%" }]} />
+                </View>
               </View>
 
               <View style={styles.macroItem}>
                 <Text style={styles.macroValue}>{roundOne(totals.carbs)} g</Text>
                 <Text style={styles.macroLabel}>Carbs</Text>
+                <View style={styles.macroProgressTrack}>
+                  <View style={[styles.macroProgressFill, styles.macroProgressCarbs, { width: "100%" }]} />
+                </View>
               </View>
 
               <View style={styles.macroItem}>
                 <Text style={styles.macroValue}>{roundOne(totals.fat)} g</Text>
                 <Text style={styles.macroLabel}>Fat</Text>
+                <View style={styles.macroProgressTrack}>
+                  <View style={[styles.macroProgressFill, styles.macroProgressFat, { width: "100%" }]} />
+                </View>
               </View>
 
               <View style={styles.macroItem}>
@@ -1255,7 +1267,7 @@ export default function NutritionScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={`Capture ${MEAL_LABELS[meal]} plate`}
                       >
-                        <Camera size={14} color={appTheme.colors.text} strokeWidth={2.4} />
+                        <Camera size={16} color={appTheme.colors.primary} strokeWidth={2.4} />
                         <Text style={styles.addMealText}>Photo</Text>
                       </Pressable>
 
@@ -1265,7 +1277,7 @@ export default function NutritionScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={`Scan ${MEAL_LABELS[meal]} barcode`}
                       >
-                        <Barcode size={14} color={appTheme.colors.text} strokeWidth={2.4} />
+                        <Barcode size={16} color={appTheme.colors.primary} strokeWidth={2.4} />
                         <Text style={styles.addMealText}>Scan</Text>
                       </Pressable>
 
@@ -1275,7 +1287,7 @@ export default function NutritionScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={`Add ${MEAL_LABELS[meal]} entry`}
                       >
-                        <Plus size={14} color={appTheme.colors.text} strokeWidth={2.4} />
+                        <Plus size={16} color={appTheme.colors.primary} strokeWidth={2.4} />
                         <Text style={styles.addMealText}>Add</Text>
                       </Pressable>
                     </View>

@@ -180,7 +180,6 @@ export default function PasswordSetupScreen({
             <AppTextField
               label="New password"
               placeholder="Create a password"
-              placeholderTextColor="#736A6A"
               value={password}
               onChangeText={setPassword}
               isPasswordField
@@ -189,7 +188,6 @@ export default function PasswordSetupScreen({
             <AppTextField
               label="Confirm password"
               placeholder="Re-enter your password"
-              placeholderTextColor="#736A6A"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               isPasswordField

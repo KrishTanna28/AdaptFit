@@ -19,6 +19,7 @@ import {
 import { doc, getDoc } from "firebase/firestore";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { Flame, Lightbulb, Droplets, Moon } from "lucide-react-native";
+import Svg, { Circle } from "react-native-svg";
 import { useFocusEffect } from "@react-navigation/native";
 import { loadDailyNutritionLog } from "../services/nutritionLog";
 import { loadDailyWorkoutLog, type LoggedWorkoutEntry } from "../services/workoutLog";
@@ -72,6 +73,12 @@ const STEP_TREND_DAYS = 7;
 const MINI_CHART_HEIGHT = 90;
 const MINI_CHART_SPACING = 22;
 const MINI_CHART_PADDING = 12;
+const MINI_CHART_MIN_SPACING = 16;
+const MINI_CHART_MAX_SPACING = 32;
+const STEPS_RING_SIZE = 100;
+const STEPS_RING_STROKE = 10;
+const STEPS_RING_RADIUS = (STEPS_RING_SIZE - STEPS_RING_STROKE) / 2;
+const STEPS_RING_CIRCUMFERENCE = 2 * Math.PI * STEPS_RING_RADIUS;
 
 function normalizeGoalForPicker(goal: number) {
   return Math.min(
@@ -176,6 +183,8 @@ export default function HomeScreen({
   const goalProgressBarPercent = Math.min(Math.max(goalProgressPercent, 0), 100);
   const goalProgressBarWidth = `${goalProgressBarPercent}%` as `${number}%`;
   const goalProgressLabel = String(goalProgressPercent) + "%";
+  const stepsRingStrokeOffset =
+    STEPS_RING_CIRCUMFERENCE * (1 - goalProgressBarPercent / 100);
   const [stepsTrackWidth, setStepsTrackWidth] = useState(0);
   const progressThumbPosition = useRef(
     new Animated.Value(goalProgressBarPercent),
@@ -348,6 +357,9 @@ export default function HomeScreen({
   const sleepHours = lifestyleLog?.recovery.sleepHours ?? null;
   const sleepQuality = lifestyleLog?.recovery.sleepQuality ?? null;
   const sleepSummary = sleepHours === null ? "Not logged" : `${formatNumberInput(sleepHours)} h`;
+  const sleepProgressPercent =
+    typeof sleepHours === "number" ? Math.min(100, Math.round((sleepHours / 8) * 100)) : 0;
+  const sleepProgressWidth = `${sleepProgressPercent}%` as `${number}%`;
 
   const stepTrendPoints = useMemo(
     () =>
@@ -369,7 +381,7 @@ export default function HomeScreen({
     const pointCount = Math.max(1, stepTrendPoints.length);
     const dataWidth = MINI_CHART_PADDING * 2 + (pointCount - 1) * MINI_CHART_SPACING;
     const minWidth = Math.max(160, dataWidth);
-    return trendChartWidth > 0 ? Math.max(minWidth, trendChartWidth) : minWidth;
+    return trendChartWidth > 0 ? trendChartWidth : minWidth;
   }, [stepTrendPoints.length, trendChartWidth]);
   const stepTrendSpacing = useMemo(() => {
     const pointCount = Math.max(1, stepTrendPoints.length);
@@ -377,13 +389,11 @@ export default function HomeScreen({
       return MINI_CHART_SPACING;
     }
 
-    const dataWidth = MINI_CHART_PADDING * 2 + (pointCount - 1) * MINI_CHART_SPACING;
-    if (trendChartWidth > dataWidth) {
-      return (trendChartWidth - MINI_CHART_PADDING * 2) / (pointCount - 1);
-    }
-
-    return MINI_CHART_SPACING;
-  }, [stepTrendPoints.length, trendChartWidth]);
+    const available = Math.max(0, stepTrendWidth - MINI_CHART_PADDING * 2);
+    const stretched = available / (pointCount - 1);
+    return Math.min(MINI_CHART_MAX_SPACING, Math.max(MINI_CHART_MIN_SPACING, stretched));
+  }, [stepTrendPoints.length, stepTrendWidth]);
+  const stepTrendLabelWidth = Math.max(14, Math.round(stepTrendSpacing));
 
   const insightText = useMemo(() => {
     if (goalProgressPercent < 45) {
@@ -691,34 +701,39 @@ export default function HomeScreen({
                 </View>
 
                 <View style={styles.stepsProgressWrap}>
-                  <View
-                    style={styles.stepsProgressIndicatorWrap}
-                    onLayout={({ nativeEvent }) => {
-                      setStepsTrackWidth(nativeEvent.layout.width);
-                    }}
-                  >
-                    <View style={styles.progressTrack}>
-                      {liveStepCounter.isLoading ? (
-                        <AppSkeleton width="56%" height={10} borderRadius={999} variant="home" />
-                      ) : (
-                        <View style={[styles.progressFill, { width: goalProgressBarWidth }]} />
-                      )}
-                    </View>
-
-                    {liveStepCounter.isLoading ? (
-                      <AppSkeleton width={48} height={24} borderRadius={999} variant="home" />
-                    ) : (
-                      <Animated.View
-                        pointerEvents="none"
-                        style={[
-                          styles.progressThumb,
-                          { transform: [{ translateX: progressThumbTranslateX }] },
-                        ]}
-                      >
-                        <Text style={styles.progressThumbText}>{goalProgressLabel}</Text>
-                      </Animated.View>
-                    )}
-                  </View>
+                  {liveStepCounter.isLoading ? (
+                    <AppSkeleton width={STEPS_RING_SIZE} height={STEPS_RING_SIZE} borderRadius={999} variant="home" />
+                  ) : (
+                    <>
+                      <Svg width={STEPS_RING_SIZE} height={STEPS_RING_SIZE}>
+                        <Circle
+                          cx={STEPS_RING_SIZE / 2}
+                          cy={STEPS_RING_SIZE / 2}
+                          r={STEPS_RING_RADIUS}
+                          stroke={appTheme.colors.border}
+                          strokeWidth={STEPS_RING_STROKE}
+                          fill={appTheme.colors.transparent}
+                        />
+                        <Circle
+                          cx={STEPS_RING_SIZE / 2}
+                          cy={STEPS_RING_SIZE / 2}
+                          r={STEPS_RING_RADIUS}
+                          stroke={appTheme.colors.primary}
+                          strokeWidth={STEPS_RING_STROKE}
+                          fill={appTheme.colors.transparent}
+                          strokeLinecap="round"
+                          strokeDasharray={`${STEPS_RING_CIRCUMFERENCE} ${STEPS_RING_CIRCUMFERENCE}`}
+                          strokeDashoffset={stepsRingStrokeOffset}
+                          rotation="-90"
+                          originX={STEPS_RING_SIZE / 2}
+                          originY={STEPS_RING_SIZE / 2}
+                        />
+                      </Svg>
+                      <View style={styles.ringCenter}>
+                        <Text style={styles.ringPercentText}>{goalProgressLabel}</Text>
+                      </View>
+                    </>
+                  )}
                 </View>
               </View>
             </AppCard>
@@ -728,7 +743,7 @@ export default function HomeScreen({
             <View style={styles.summaryHeaderRow}>
               <Text style={styles.metricsTitle}>Today summary</Text>
               <View style={styles.streakPill}>
-                <Flame size={14} color={appTheme.colors.text} strokeWidth={2.2} />
+                <Flame size={14} color={appTheme.colors.primary} strokeWidth={2.2} />
                 <Text style={styles.streakText}>{String(workoutStreak)} day streak</Text>
               </View>
             </View>
@@ -738,13 +753,13 @@ export default function HomeScreen({
                 <Text style={styles.metricValue}>{stepCountText}</Text>
                 <Text style={styles.metricLabel}>Steps today</Text>
               </View>
-              <View style={styles.metricItem}>
+              <View style={[styles.metricItem, styles.metricItemDivider]}>
                 <Text style={styles.metricValue}>
                   {isLoadingCaloriesIntake ? 0 : totalCaloriesBurned} kcal
                 </Text>
                 <Text style={styles.metricLabel}>Calories burned</Text>
               </View>
-              <View style={styles.metricItem}>
+              <View style={[styles.metricItem, styles.metricItemDivider]}>
                 <Text style={styles.metricValue}>
                   {isLoadingCaloriesIntake ? 0 : caloriesIntake}
                 </Text>
@@ -763,7 +778,7 @@ export default function HomeScreen({
             >
               <AppCard style={styles.lifestyleCard}>
                 <View style={styles.lifestyleHeaderRow}>
-                  <Droplets size={16} color={appTheme.colors.text} strokeWidth={2.2} />
+                  <Droplets size={16} color={appTheme.colors.accent} strokeWidth={2.2} />
                   <Text style={styles.lifestyleTitle}>Water</Text>
                 </View>
                 <Text style={styles.lifestyleValue}>
@@ -772,6 +787,9 @@ export default function HomeScreen({
                 <Text style={styles.lifestyleMeta}>
                   Goal {formatMl(hydrationGoal.goalMl)} · {String(hydrationProgressPercent)}%
                 </Text>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: hydrationProgressWidth }]} />
+                </View>
               </AppCard>
             </Pressable>
 
@@ -784,7 +802,7 @@ export default function HomeScreen({
             >
               <AppCard style={styles.lifestyleCard}>
                 <View style={styles.lifestyleHeaderRow}>
-                  <Moon size={16} color={appTheme.colors.text} strokeWidth={2.2} />
+                  <Moon size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
                   <Text style={styles.lifestyleTitle}>Sleep</Text>
                 </View>
                 <Text style={styles.lifestyleValue}>
@@ -793,6 +811,9 @@ export default function HomeScreen({
                 <Text style={styles.lifestyleMeta}>
                   Quality {sleepQuality ?? "-"}
                 </Text>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: sleepProgressWidth }]} />
+                </View>
               </AppCard>
             </Pressable>
           </View>
@@ -805,7 +826,7 @@ export default function HomeScreen({
             <AppCard style={styles.trendCard}>
               <View style={styles.trendHeaderRow}>
                 <Text style={styles.trendTitle}>Steps trend</Text>
-                <Text style={styles.trendMeta}>Last {String(STEP_TREND_DAYS)} days</Text>
+                <Text style={styles.trendMeta}>View History</Text>
               </View>
 
               <View
@@ -833,18 +854,33 @@ export default function HomeScreen({
                       <View
                         style={[
                           styles.trendLabelsRow,
-                          { width: stepTrendWidth, paddingHorizontal: MINI_CHART_PADDING },
+                          {
+                            width: stepTrendWidth,
+                            paddingHorizontal: MINI_CHART_PADDING,
+                            position: "relative",
+                            minHeight: 16,
+                          },
                         ]}
                       >
-                        {stepTrendLabels.map((label, index) => (
-                          <Text
-                            key={`trend-label-${label}-${index}`}
-                            style={[styles.trendLabel, { width: stepTrendSpacing }]}
-                            numberOfLines={1}
-                          >
-                            {label}
-                          </Text>
-                        ))}
+                        {stepTrendLabels.map((label, index) => {
+                          const baseLeft =
+                            MINI_CHART_PADDING + index * stepTrendSpacing - stepTrendLabelWidth / 2;
+                          const maxLeft = Math.max(0, stepTrendWidth - stepTrendLabelWidth);
+                          const clampedLeft = Math.min(Math.max(baseLeft, 0), maxLeft);
+
+                          return (
+                            <Text
+                              key={`trend-label-${label}-${index}`}
+                              style={[
+                                styles.trendLabel,
+                                { width: stepTrendLabelWidth, left: clampedLeft, position: "absolute" },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {label}
+                            </Text>
+                          );
+                        })}
                       </View>
                     ) : null}
                   </View>
@@ -857,7 +893,7 @@ export default function HomeScreen({
 
           <AppCard style={styles.suggestionCard}>
             <View style={styles.suggestionLabelRow}>
-              <Lightbulb size={16} color={appTheme.colors.mutedText} strokeWidth={2.2} />
+              <Lightbulb size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
               <Text style={styles.suggestionLabel}>AI insight</Text>
             </View>
             <Text style={styles.suggestionText}>{insightText}</Text>
@@ -874,7 +910,6 @@ export default function HomeScreen({
               <AppTextField
                 label="New password"
                 placeholder="Create a password"
-                placeholderTextColor="#736A6A"
                 value={newPassword}
                 onChangeText={setNewPassword}
                 isPasswordField
@@ -883,7 +918,6 @@ export default function HomeScreen({
               <AppTextField
                 label="Confirm password"
                 placeholder="Re-enter your password"
-                placeholderTextColor="#736A6A"
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 isPasswordField
@@ -891,6 +925,7 @@ export default function HomeScreen({
 
               <AppButton
                 title="Save password"
+                variant="secondary"
                 onPress={handleAddPassword}
                 loading={isSavingPassword}
                 disabled={isSavingPassword}

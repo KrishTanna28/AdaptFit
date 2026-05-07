@@ -4,7 +4,8 @@ import { appTheme } from "../theme/designSystem";
 export const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: appTheme.spacing.lg,
-    paddingVertical: appTheme.spacing.xl,
+    paddingTop: appTheme.spacing.lg,
+    paddingBottom: appTheme.spacing.xxl,
   },
   container: {
     gap: appTheme.spacing.lg,
@@ -14,26 +15,26 @@ export const styles = StyleSheet.create({
   },
   eyebrow: {
     ...appTheme.typography.label,
-    color: appTheme.colors.text,
+    color: appTheme.colors.primary,
   },
   title: {
-    ...appTheme.typography.heading,
-    color: appTheme.colors.text,
+    ...appTheme.typography.headingLarge,
+    color: appTheme.colors.textPrimary,
   },
   subtitle: {
-    ...appTheme.typography.body,
-    color: appTheme.colors.mutedText,
+    ...appTheme.typography.bodyLarge,
+    color: appTheme.colors.textSecondary,
   },
   formCard: {
-    gap: appTheme.spacing.md,
+    gap: appTheme.spacing.lg,
   },
   sectionLabel: {
     ...appTheme.typography.label,
-    color: appTheme.colors.mutedText,
+    color: appTheme.colors.textSecondary,
   },
   email: {
-    ...appTheme.typography.subheading,
-    color: appTheme.colors.text,
+    ...appTheme.typography.bodySmall,
+    color: appTheme.colors.textSecondary,
     marginBottom: appTheme.spacing.xs,
   },
 });

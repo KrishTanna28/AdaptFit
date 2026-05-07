@@ -31,6 +31,27 @@ export default function WorkoutEntryDetailModal({
   onUpdateEntry,
   onDeleteEntry,
 }: WorkoutEntryDetailModalProps) {
+  const detailRows = entry
+    ? [
+        ["Type", entry.workoutMode.charAt(0).toUpperCase() + entry.workoutMode.slice(1)],
+        ["Intensity", entry.intensity.charAt(0).toUpperCase() + entry.intensity.slice(1)],
+        ["Duration", `${formatDuration(entry.durationMin)} min`],
+        ...(entry.workoutMode === "strength"
+          ? [
+              ["Sets", String(entry.sets ?? "--")],
+              ["Reps", String(entry.reps ?? "--")],
+              ["Seconds per rep", String(entry.secPerRep ?? "--")],
+              ["Rest between sets", String(entry.restBetweenSetsSec ?? "--") + " sec"],
+              ["Minimum session", String(entry.minSessionMin ?? "--") + " min"],
+            ]
+          : []),
+        [
+          "Active calories",
+          entry.caloriesActive > 0 ? String(Math.round(entry.caloriesActive)) + " kcal" : "--",
+        ],
+      ]
+    : [];
+
   return (
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
@@ -46,50 +67,20 @@ export default function WorkoutEntryDetailModal({
                 accessibilityLabel="Close workout details"
                 disabled={Boolean(isBusy)}
                 onPress={onClose}
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: appTheme.radii.pill,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: appTheme.colors.card,
-                  borderWidth: 1,
-                  borderColor: appTheme.colors.border,
-                }}
+                style={styles.modalIconButton}
               >
-                <X size={18} color={appTheme.colors.text} strokeWidth={2.2} />
+                <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
               </Pressable>
             </View>
 
             {entry ? (
               <View style={styles.block}>
-                <Text style={styles.entryMeta}>
-                  Type: {entry.workoutMode.charAt(0).toUpperCase() + entry.workoutMode.slice(1)}
-                </Text>
-                <Text style={styles.entryMeta}>
-                  Intensity: {entry.intensity.charAt(0).toUpperCase() + entry.intensity.slice(1)}
-                </Text>
-                <Text style={styles.entryMeta}>Duration: {formatDuration(entry.durationMin)} min</Text>
-
-                {entry.workoutMode === "strength" ? (
-                  <>
-                    <Text style={styles.entryMeta}>Sets: {String(entry.sets ?? "--")}</Text>
-                    <Text style={styles.entryMeta}>Reps: {String(entry.reps ?? "--")}</Text>
-                    <Text style={styles.entryMeta}>
-                      Seconds per rep: {String(entry.secPerRep ?? "--")}
-                    </Text>
-                    <Text style={styles.entryMeta}>
-                      Rest between sets (sec): {String(entry.restBetweenSetsSec ?? "--")}
-                    </Text>
-                    <Text style={styles.entryMeta}>
-                      Minimum session (min): {String(entry.minSessionMin ?? "--")}
-                    </Text>
-                  </>
-                ) : null}
-
-                <Text style={styles.entryMeta}>
-                  Active calories: {entry.caloriesActive > 0 ? String(Math.round(entry.caloriesActive)) + " kcal" : "--"}
-                </Text>
+                {detailRows.map(([label, value]) => (
+                  <View key={label} style={styles.detailLine}>
+                    <Text style={styles.detailLineLabel}>{label}</Text>
+                    <Text style={styles.detailLineValue}>{value}</Text>
+                  </View>
+                ))}
               </View>
             ) : null}
 

@@ -1,11 +1,11 @@
 import React, { ReactNode } from "react";
-import { View, ViewStyle } from "react-native";
+import { StyleProp, View, ViewStyle } from "react-native";
 import { styles } from "./AppCard.styles";
 
 type AppCardProps = {
   children: ReactNode;
   variant?: "default" | "tinted";
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 };
 
 export default function AppCard({

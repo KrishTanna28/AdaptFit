@@ -44,6 +44,23 @@ export default function NutritionEntryDetailModal({
   onUpdateEntry,
   onDeleteEntry,
 }: NutritionEntryDetailModalProps) {
+  const detailRows = entry
+    ? [
+        ["Meal", MEAL_LABELS[entry.mealType]],
+        ["Quantity", `${formatQuantity(entry.quantity)} serving`],
+        ["Calories", `${Math.round(entry.calories)} kcal`],
+        ["Protein", `${roundOne(entry.protein)} g`],
+        ["Carbs", `${roundOne(entry.carbs)} g`],
+        ["Fat", `${roundOne(entry.fat)} g`],
+        ["Fibre", `${roundOne(entry.fiber)} g`],
+        ["Sodium", `${roundOne(entry.sodiumMg)} mg`],
+        ["Potassium", `${roundOne(entry.potassiumMg)} mg`],
+        ["Calcium", `${roundOne(entry.calciumMg)} mg`],
+        ["Iron", `${roundOne(entry.ironMg)} mg`],
+        ["Vitamin C", `${roundOne(entry.vitaminCMg)} mg`],
+      ]
+    : [];
+
   return (
     <Modal
       transparent
@@ -66,24 +83,18 @@ export default function NutritionEntryDetailModal({
                 disabled={!entry || isBusy}
                 onPress={onClose}
               >
-                <Text style={detailModalStyles.modalCloseText}><X size={18} color={appTheme.colors.text} strokeWidth={2.2}></X></Text>
+                <Text style={detailModalStyles.modalCloseText}><X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2}></X></Text>
               </Pressable>
             </View>
 
             {entry ? (
               <>
-                <Text style={detailModalStyles.meta}>Meal: {MEAL_LABELS[entry.mealType]}</Text>
-                <Text style={detailModalStyles.line}>Quantity: {formatQuantity(entry.quantity)} serving</Text>
-                <Text style={detailModalStyles.line}>Calories: {Math.round(entry.calories)} kcal</Text>
-                <Text style={detailModalStyles.line}>Protein: {roundOne(entry.protein)} g</Text>
-                <Text style={detailModalStyles.line}>Carbs: {roundOne(entry.carbs)} g</Text>
-                <Text style={detailModalStyles.line}>Fat: {roundOne(entry.fat)} g</Text>
-                <Text style={detailModalStyles.line}>Fibre: {roundOne(entry.fiber)} g</Text>
-                <Text style={detailModalStyles.line}>Sodium: {roundOne(entry.sodiumMg)} mg</Text>
-                <Text style={detailModalStyles.line}>Potassium: {roundOne(entry.potassiumMg)} mg</Text>
-                <Text style={detailModalStyles.line}>Calcium: {roundOne(entry.calciumMg)} mg</Text>
-                <Text style={detailModalStyles.line}>Iron: {roundOne(entry.ironMg)} mg</Text>
-                <Text style={detailModalStyles.line}>Vitamin C: {roundOne(entry.vitaminCMg)} mg</Text>
+                {detailRows.map(([label, value]) => (
+                  <View key={label} style={detailModalStyles.line}>
+                    <Text style={detailModalStyles.lineLabel}>{label}</Text>
+                    <Text style={detailModalStyles.lineValue}>{value}</Text>
+                  </View>
+                ))}
               </>
             ) : null}
 

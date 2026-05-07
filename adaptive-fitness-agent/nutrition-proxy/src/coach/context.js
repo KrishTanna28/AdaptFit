@@ -1,5 +1,6 @@
 const DEFAULT_CONTEXT_WINDOW_DAYS = 7;
 const MAX_CONTEXT_WINDOW_DAYS = 30;
+const PROFILE_HISTORY_LIMIT = 30;
 const MIN_ACTIVE_CALORIE_TARGET = 150;
 const MAX_ACTIVE_CALORIE_TARGET = 650;
 const ACTIVE_CALORIE_INTAKE_RATIO = 0.2;
@@ -123,6 +124,21 @@ function parseProfile(rawProfile) {
   };
 }
 
+function normalizeProfileHistoryEntry(doc) {
+  const data = doc?.data ? doc.data() ?? {} : doc ?? {};
+  const snapshot = parseProfile(data.snapshot);
+
+  return {
+    id: typeof doc?.id === "string" ? doc.id : null,
+    changedAt: toSerializable(data.changedAt),
+    changedFields: Array.isArray(data.changedFields)
+      ? data.changedFields.filter((field) => typeof field === "string")
+      : [],
+    snapshot,
+    source: typeof data.source === "string" ? data.source : null,
+  };
+}
+
 function normalizeNutritionEntry(raw, dateKey) {
   const serializableRaw = toSerializable(raw);
 
@@ -176,6 +192,19 @@ function normalizeWorkoutEntry(raw, dateKey) {
     mappingSource: typeof raw.mappingSource === "string" ? raw.mappingSource : "",
     loggedAt: typeof raw.loggedAt === "string" ? raw.loggedAt : null,
     raw: serializableRaw,
+  };
+}
+
+function normalizeStepLog(raw, dateKey) {
+  const source = raw && typeof raw === "object" ? raw : {};
+
+  return {
+    dateKey,
+    steps: Math.max(0, Math.round(toNumber(source.steps, 0))),
+    goal: Math.max(0, Math.round(toNumber(source.goal, 0))),
+    source: typeof source.source === "string" ? source.source : "none",
+    loggedAt: typeof source.loggedAt === "string" ? source.loggedAt : null,
+    updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : null,
   };
 }
 
@@ -317,6 +346,22 @@ async function loadDocumentsByDate(db, uid, collectionName, dayDescriptors) {
   return dayResults;
 }
 
+async function loadProfileHistory(db, uid, limit) {
+  try {
+    const snapshot = await db
+      .collection("users")
+      .doc(uid)
+      .collection("profileHistory")
+      .orderBy("changedAt", "desc")
+      .limit(limit)
+      .get();
+
+    return snapshot.docs.map((doc) => normalizeProfileHistoryEntry(doc)).reverse();
+  } catch {
+    return [];
+  }
+}
+
 function buildDailyNutritionSummary(dateKeys, nutritionEntries) {
   return dateKeys.map((dateKey) => {
     const dayEntries = nutritionEntries.filter((entry) => entry.dateKey === dateKey);
@@ -426,7 +471,15 @@ function buildRecencySummary(input) {
 
 function buildSignals(input) {
   const signals = [];
-  const { profile, workoutSummary, nutritionSummary, lifestyleSummary, stepGoal, recency } = input;
+  const {
+    profile,
+    workoutSummary,
+    nutritionSummary,
+    lifestyleSummary,
+    stepGoal,
+    recency,
+    stepsSummary,
+  } = input;
 
   if (!nutritionSummary.totalMealsLogged) {
     signals.push("No nutrition logs in the selected window.");
@@ -472,6 +525,10 @@ function buildSignals(input) {
 
   if (typeof stepGoal === "number" && stepGoal >= 10000) {
     signals.push("User has an ambitious daily step target.");
+  }
+
+  if (stepsSummary?.goalMetToday && recency && !recency.hasWorkoutLoggedToday) {
+    signals.push("Step goal met today; treat it as light activity even without a logged workout.");
   }
 
   const todayLifestyle = lifestyleSummary?.daily?.find(
@@ -534,16 +591,20 @@ export async function loadCoachContext(db, uid, options = {}) {
   const profile = parseProfile(userData.profile);
   const stepGoal = toNumber(userData.dailyStepGoal, 0) || null;
 
-  const [nutritionDayDescriptors, workoutDayDescriptors, lifestyleDayDescriptors] = await Promise.all([
+  const profileHistoryEntries = await loadProfileHistory(db, uid, PROFILE_HISTORY_LIMIT);
+
+  const [nutritionDayDescriptors, workoutDayDescriptors, lifestyleDayDescriptors, stepDayDescriptors] = await Promise.all([
     loadDayDescriptors(db, uid, "nutritionLogs", windowDays, includeAllHistory),
     loadDayDescriptors(db, uid, "workoutLogs", windowDays, includeAllHistory),
     loadDayDescriptors(db, uid, "lifestyleLogs", windowDays, includeAllHistory),
+    loadDayDescriptors(db, uid, "stepLogs", windowDays, includeAllHistory),
   ]);
 
-  const [nutritionByDateRaw, workoutByDateRaw, lifestyleByDateRaw] = await Promise.all([
+  const [nutritionByDateRaw, workoutByDateRaw, lifestyleByDateRaw, stepByDateRaw] = await Promise.all([
     loadEntriesByDate(db, uid, "nutritionLogs", nutritionDayDescriptors),
     loadEntriesByDate(db, uid, "workoutLogs", workoutDayDescriptors),
     loadDocumentsByDate(db, uid, "lifestyleLogs", lifestyleDayDescriptors),
+    loadDocumentsByDate(db, uid, "stepLogs", stepDayDescriptors),
   ]);
 
   const nutritionByDate = nutritionByDateRaw.map((day) => ({
@@ -577,6 +638,10 @@ export async function loadCoachContext(db, uid, options = {}) {
 
   const lifestyleLogs = lifestyleByDate
     .map((day) => day.log)
+    .sort((a, b) => String(a.dateKey ?? "").localeCompare(String(b.dateKey ?? "")));
+
+  const stepLogs = stepByDateRaw
+    .map((day) => normalizeStepLog(day.data, day.dateKey))
     .sort((a, b) => String(a.dateKey ?? "").localeCompare(String(b.dateKey ?? "")));
 
   const nutritionDateKeys = nutritionByDate.map((day) => day.dateKey);
@@ -705,6 +770,27 @@ export async function loadCoachContext(db, uid, options = {}) {
     entriesByDay: lifestyleByDate,
   };
 
+  const stepLogTotal = stepLogs.reduce((sum, log) => sum + log.steps, 0);
+  const stepsToday = stepLogs.find((log) => log.dateKey === currentDateKey)?.steps ?? 0;
+  const stepGoalToday = stepLogs.find((log) => log.dateKey === currentDateKey)?.goal ?? stepGoal ?? null;
+  const lastStepEntry = getMostRecentEntry(stepLogs);
+  const stepsSummary = {
+    totalSteps: Math.round(stepLogTotal),
+    avgDailySteps: stepLogs.length ? Math.round(stepLogTotal / stepLogs.length) : 0,
+    daysLogged: stepLogs.length,
+    stepsToday,
+    stepGoalToday,
+    goalMetToday:
+      typeof stepGoalToday === "number" && stepGoalToday > 0
+        ? stepsToday >= stepGoalToday
+        : null,
+    lastStepDateKey: lastStepEntry?.dateKey ?? null,
+    daysSinceLastStepLog: lastStepEntry
+      ? daysBetweenDateKeys(lastStepEntry.dateKey, currentDateKey)
+      : null,
+    daily: stepLogs,
+  };
+
   const recencyBase = buildRecencySummary({
     currentDateKey,
     nutritionEntries,
@@ -747,11 +833,16 @@ export async function loadCoachContext(db, uid, options = {}) {
 
   const signals = buildSignals({
     profile,
+    profileHistory: {
+      entries: profileHistoryEntries,
+      entryCount: profileHistoryEntries.length,
+    },
     workoutSummary,
     nutritionSummary,
     lifestyleSummary,
     stepGoal,
     recency,
+    stepsSummary,
   });
 
   return {
@@ -779,6 +870,7 @@ export async function loadCoachContext(db, uid, options = {}) {
     nutrition: nutritionSummary,
     workouts: workoutSummary,
     lifestyle: lifestyleSummary,
+    steps: stepsSummary,
     signals,
   };
 }

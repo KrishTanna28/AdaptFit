@@ -134,7 +134,7 @@ export default function WorkoutFormCheckModal({
           onPress={handleClose}
           style={styles.modalIconButton}
         >
-          <X size={18} color={appTheme.colors.text} strokeWidth={2.2} />
+          <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
         </Pressable>
       </View>
 
@@ -172,7 +172,7 @@ export default function WorkoutFormCheckModal({
           onPress={handleClose}
           style={styles.modalIconButton}
         >
-          <X size={18} color={appTheme.colors.text} strokeWidth={2.2} />
+          <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
         </Pressable>
       </View>
 
@@ -222,7 +222,7 @@ export default function WorkoutFormCheckModal({
             onPress={handleClose}
             style={styles.modalIconButton}
           >
-            <X size={18} color={appTheme.colors.text} strokeWidth={2.2} />
+            <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
           </Pressable>
         </View>
 

@@ -13,29 +13,32 @@ type AppSkeletonProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-const variantPalette: Record<SkeletonVariant, { color: string; minOpacity: number; maxOpacity: number; duration: number }> = {
+const variantPalette: Record<
+  SkeletonVariant,
+  { color: string; minOpacity: number; maxOpacity: number; duration: number }
+> = {
   default: {
-    color: appTheme.colors.border,
+    color: appTheme.colors.skeletonBase,
     minOpacity: 0.45,
     maxOpacity: 0.9,
     duration: 700,
   },
   home: {
-    color: "#D6CEE8",
-    minOpacity: 0.38,
-    maxOpacity: 0.86,
+    color: appTheme.colors.skeletonHighlight,
+    minOpacity: 0.48,
+    maxOpacity: 0.92,
     duration: 760,
   },
   activity: {
-    color: "#D0D8E6",
-    minOpacity: 0.36,
-    maxOpacity: 0.84,
+    color: appTheme.colors.skeletonBase,
+    minOpacity: 0.42,
+    maxOpacity: 0.88,
     duration: 680,
   },
   auth: {
-    color: "#DCCBEA",
-    minOpacity: 0.4,
-    maxOpacity: 0.88,
+    color: appTheme.colors.skeletonHighlight,
+    minOpacity: 0.46,
+    maxOpacity: 0.9,
     duration: 820,
   },
 };
@@ -43,7 +46,7 @@ const variantPalette: Record<SkeletonVariant, { color: string; minOpacity: numbe
 export default function AppSkeleton({
   width,
   height,
-  borderRadius = appTheme.radii.sm,
+  borderRadius = appTheme.radii.md,
   variant = "default",
   style,
 }: AppSkeletonProps) {

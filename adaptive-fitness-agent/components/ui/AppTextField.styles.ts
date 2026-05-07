@@ -3,34 +3,38 @@ import { appTheme } from "../../theme/designSystem";
 
 export const styles = StyleSheet.create({
   wrapper: {
-    gap: appTheme.spacing.xs,
+    gap: appTheme.spacing.sm,
   },
   label: {
     ...appTheme.typography.label,
+    color: appTheme.colors.textSecondary,
   },
   inputRow: {
-    position: "relative",
+    minHeight: appTheme.sizes.inputMinHeight,
+    borderRadius: appTheme.radii.md,
+    backgroundColor: appTheme.colors.background,
+    borderWidth: 1.5,
+    borderColor: appTheme.colors.transparent,
     justifyContent: "center",
   },
+  inputRowFocused: {
+    borderColor: appTheme.colors.primary,
+  },
   input: {
-    minHeight: 54,
-    borderRadius: appTheme.radii.md,
-    backgroundColor: appTheme.colors.inputBackground,
-    borderWidth: 1,
-    borderColor: appTheme.colors.border,
-    paddingHorizontal: appTheme.spacing.md,
-    color: appTheme.colors.text,
-    fontSize: 15,
-    fontWeight: "500",
+    minHeight: appTheme.sizes.inputMinHeight,
+    paddingHorizontal: appTheme.spacing.lg,
+    paddingVertical: appTheme.spacing.md,
+    color: appTheme.colors.textPrimary,
+    ...appTheme.typography.bodyLarge,
   },
   inputWithButton: {
-    paddingRight: 56,
+    paddingRight: appTheme.spacing.xxl + appTheme.spacing.xl,
   },
   visibilityButton: {
     position: "absolute",
-    right: appTheme.spacing.md,
-    width: 24,
-    height: 24,
+    right: appTheme.spacing.lg,
+    width: appTheme.sizes.iconButtonXs,
+    height: appTheme.sizes.iconButtonXs,
     alignItems: "center",
     justifyContent: "center",
   },

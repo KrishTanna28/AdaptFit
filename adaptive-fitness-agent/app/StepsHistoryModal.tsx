@@ -42,6 +42,8 @@ const CHUNK_SIZE: Record<Timeframe, number> = {
 };
 
 const POINT_SPACING = 44;
+const MIN_POINT_SPACING = 28;
+const MAX_POINT_SPACING = 56;
 const CHART_HEIGHT = 180;
 const CHART_PADDING = 18;
 
@@ -65,7 +67,7 @@ export function StepBarChart({
   }
 
   const achievedColor = appTheme.colors.primary;
-  const missedColor = appTheme.colors.secondary;
+  const missedColor = appTheme.colors.primary;
   const targetBarColor = appTheme.colors.border;
   const gridColor = appTheme.colors.border;
   const hasSteps = points.some((point) => point.steps > 0);
@@ -111,7 +113,7 @@ export function StepBarChart({
           y1={yForValue(clampedGoalLineValue)}
           x2={width - padding}
           y2={yForValue(clampedGoalLineValue)}
-          stroke={appTheme.colors.mutedText}
+          stroke={appTheme.colors.accent}
           strokeWidth={1}
           strokeDasharray="5,4"
         />
@@ -308,7 +310,7 @@ export default function StepsHistoryModal({
     const pointCount = Math.max(1, orderedPoints.length);
     const dataWidth = CHART_PADDING * 2 + (pointCount - 1) * POINT_SPACING;
     const minWidth = Math.max(240, dataWidth);
-    return chartContainerWidth > 0 ? Math.max(minWidth, chartContainerWidth) : minWidth;
+    return chartContainerWidth > 0 ? chartContainerWidth : minWidth;
   }, [chartContainerWidth, orderedPoints.length]);
   const pointSpacing = useMemo(() => {
     const pointCount = Math.max(1, orderedPoints.length);
@@ -316,13 +318,11 @@ export default function StepsHistoryModal({
       return POINT_SPACING;
     }
 
-    const dataWidth = CHART_PADDING * 2 + (pointCount - 1) * POINT_SPACING;
-    if (chartContainerWidth > dataWidth) {
-      return (chartContainerWidth - CHART_PADDING * 2) / (pointCount - 1);
-    }
-
-    return POINT_SPACING;
-  }, [chartContainerWidth, orderedPoints.length]);
+    const available = Math.max(0, chartWidth - CHART_PADDING * 2);
+    const stretched = available / (pointCount - 1);
+    return Math.min(MAX_POINT_SPACING, Math.max(MIN_POINT_SPACING, stretched));
+  }, [chartWidth, orderedPoints.length]);
+  const labelWidth = Math.max(18, Math.round(pointSpacing));
 
   const chartPoints: StepBarPoint[] = useMemo(
     () =>
@@ -355,7 +355,7 @@ export default function StepsHistoryModal({
               accessibilityRole="button"
               accessibilityLabel="Close steps history"
             >
-              <X size={16} color={appTheme.colors.text} strokeWidth={2.2} />
+              <X size={16} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
             </Pressable>
           </View>
 
@@ -418,7 +418,7 @@ export default function StepsHistoryModal({
               accessibilityRole="button"
               accessibilityLabel="Show previous bars"
             >
-              <ChevronLeft size={16} color={appTheme.colors.text} strokeWidth={2.4} />
+              <ChevronLeft size={16} color={appTheme.colors.primary} strokeWidth={2.4} />
             </Pressable>
 
             <Pressable
@@ -432,7 +432,7 @@ export default function StepsHistoryModal({
               accessibilityRole="button"
               accessibilityLabel="Show next bars"
             >
-              <ChevronRight size={16} color={appTheme.colors.text} strokeWidth={2.4} />
+              <ChevronRight size={16} color={appTheme.colors.primary} strokeWidth={2.4} />
             </Pressable>
 
             <View style={styles.chartInner}>
@@ -445,23 +445,39 @@ export default function StepsHistoryModal({
                   pointSpacing={pointSpacing}
                 />
               </View>
-              <View style={[styles.chartLabelsRow, { width: chartWidth, paddingHorizontal: CHART_PADDING }]}>
-                {orderedPoints.map((point) => (
-                  <Text
-                    key={`label-${point.key}`}
-                    style={[styles.chartLabel, { width: pointSpacing }]}
-                    numberOfLines={1}
-                  >
-                    {point.label}
-                  </Text>
-                ))}
+              <View
+                style={[
+                  styles.chartLabelsRow,
+                  {
+                    width: chartWidth,
+                    paddingHorizontal: CHART_PADDING,
+                    position: "relative",
+                    minHeight: 18,
+                  },
+                ]}
+              >
+                {orderedPoints.map((point, index) => {
+                  const baseLeft = CHART_PADDING + index * pointSpacing - labelWidth / 2;
+                  const maxLeft = Math.max(0, chartWidth - labelWidth);
+                  const clampedLeft = Math.min(Math.max(baseLeft, 0), maxLeft);
+
+                  return (
+                    <Text
+                      key={`label-${point.key}`}
+                      style={[styles.chartLabel, { width: labelWidth, left: clampedLeft, position: "absolute" }]}
+                      numberOfLines={1}
+                    >
+                      {point.label}
+                    </Text>
+                  );
+                })}
               </View>
             </View>
           </View>
 
           {/* {loadingRanges[activeRange] ? (
             <View style={styles.loadingRow}>
-              <ActivityIndicator color={appTheme.colors.text} />
+              <ActivityIndicator color={appTheme.colors.primary} />
               <Text style={styles.loadingText}>Loading more steps...</Text>
             </View>
           ) : null} */}

@@ -138,7 +138,7 @@ export default function ProfileEditModal({
                 accessibilityRole="button"
                 accessibilityLabel="Close edit modal"
               >
-                <Text style={styles.modalCloseText}><X size={18} color={appTheme.colors.text} strokeWidth={2.2}></X></Text>
+                <Text style={styles.modalCloseText}><X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2}></X></Text>
               </Pressable>
             </View>
 

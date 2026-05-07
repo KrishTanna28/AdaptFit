@@ -4,11 +4,11 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 
 import { appTheme } from "../../theme/designSystem";
+import AppButton from "./AppButton";
 
 type AlertActionStyle = "primary" | "secondary";
 
@@ -185,36 +185,17 @@ export function AppAlertProvider({ children }: AppAlertProviderProps) {
                   <Text style={styles.message}>{alert.message}</Text>
                 ) : null}
 
-                <View
-                  style={[
-                    styles.actionsRow,
-                    alert.actions.length === 1 && styles.singleActionRow,
-                  ]}
-                >
+                <View style={styles.actionsRow}>
                   {alert.actions.map((action) => {
                     const isPrimary = (action.style ?? "primary") === "primary";
 
                     return (
-                      <TouchableOpacity
+                      <AppButton
                         key={action.label}
-                        activeOpacity={0.9}
+                        title={action.label}
                         onPress={() => handleActionPress(action)}
-                        style={[
-                          styles.actionButton,
-                          isPrimary ? styles.primaryButton : styles.secondaryButton,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.actionButtonText,
-                            isPrimary
-                              ? styles.primaryButtonText
-                              : styles.secondaryButtonText,
-                          ]}
-                        >
-                          {action.label}
-                        </Text>
-                      </TouchableOpacity>
+                        variant={isPrimary ? "primary" : "secondary"}
+                      />
                     );
                   })}
                 </View>
@@ -240,72 +221,29 @@ export function useAppAlert() {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(32, 32, 34, 0.28)",
+    backgroundColor: appTheme.colors.overlay,
     justifyContent: "center",
     paddingHorizontal: appTheme.spacing.lg,
   },
   card: {
-    backgroundColor: appTheme.colors.cardAlt,
-    borderRadius: appTheme.radii.lg,
-    borderWidth: 1,
-    borderColor: appTheme.colors.border,
-    ...appTheme.shadows.medium,
+    backgroundColor: appTheme.colors.card,
+    borderRadius: appTheme.radii.xl,
+    padding: appTheme.spacing.xxl,
+    ...appTheme.shadows.modal,
   },
   content: {
-    padding: appTheme.spacing.lg,
-    gap: appTheme.spacing.md,
-  },
-  chip: {
-    alignSelf: "flex-start",
-    borderRadius: appTheme.radii.pill,
-    paddingHorizontal: appTheme.spacing.md,
-    paddingVertical: appTheme.spacing.xs,
-  },
-  chipText: {
-    ...appTheme.typography.caption,
-    fontWeight: "700",
+    gap: appTheme.spacing.lg,
   },
   title: {
-    ...appTheme.typography.subheading,
-    color: appTheme.colors.text,
+    ...appTheme.typography.headingSmall,
+    color: appTheme.colors.textPrimary,
   },
   message: {
-    ...appTheme.typography.body,
-    color: appTheme.colors.mutedText,
+    ...appTheme.typography.bodyLarge,
+    color: appTheme.colors.textSecondary,
   },
   actionsRow: {
-    flexDirection: "row",
     gap: appTheme.spacing.sm,
     marginTop: appTheme.spacing.xs,
-  },
-  singleActionRow: {
-    justifyContent: "flex-end",
-  },
-  actionButton: {
-    flex: 1,
-    minHeight: 54,
-    borderRadius: appTheme.radii.md,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: appTheme.spacing.md,
-  },
-  primaryButton: {
-    backgroundColor: appTheme.colors.primary,
-    ...appTheme.shadows.soft,
-  },
-  secondaryButton: {
-    backgroundColor: appTheme.colors.card,
-    borderWidth: 1,
-    borderColor: appTheme.colors.border,
-  },
-  actionButtonText: {
-    ...appTheme.typography.body,
-    fontWeight: "700",
-  },
-  primaryButtonText: {
-    color: appTheme.colors.text,
-  },
-  secondaryButtonText: {
-    color: appTheme.colors.text,
   },
 });

@@ -800,7 +800,7 @@ export default function WorkoutScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Open form check camera"
               >
-                <Camera size={20} color={appTheme.colors.text} strokeWidth={2.2} />
+                <Camera size={20} color={appTheme.colors.primary} strokeWidth={2.2} />
               </Pressable>
             </View>
 
@@ -812,10 +812,10 @@ export default function WorkoutScreen() {
                 accessibilityLabel={"Change workout date. Current " + formatDateForDisplay(selectedDateKey)}
               >
                 <View style={styles.datePickerLeft}>
-                  <CalendarDays size={16} color={appTheme.colors.mutedText} strokeWidth={2.2} />
+                  <CalendarDays size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
                   <Text style={styles.datePickerValue}>{formatDateForDisplay(selectedDateKey)}</Text>
                 </View>
-                <ChevronDown size={16} color={appTheme.colors.mutedText} strokeWidth={2.2} />
+                <ChevronDown size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
               </Pressable>
             </View>
           </AppCard>
@@ -829,12 +829,12 @@ export default function WorkoutScreen() {
                 <Text style={styles.totalLabel}>Calories burned</Text>
               </View>
 
-              <View style={styles.totalItem}>
+              <View style={[styles.totalItem, styles.totalItemDivider]}>
                 <Text style={styles.totalValue}>{entries.length}</Text>
                 <Text style={styles.totalLabel}>Workouts</Text>
               </View>
 
-              <View style={styles.totalItem}>
+              <View style={[styles.totalItem, styles.totalItemDivider]}>
                 <Text style={styles.totalValue}>{Math.round(totalWorkoutDurationMin)} min</Text>
                 <Text style={styles.totalLabel}>Duration</Text>
               </View>
@@ -854,7 +854,7 @@ export default function WorkoutScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Add workout"
                 >
-                  <Plus size={14} color={appTheme.colors.text} strokeWidth={2.4} />
+                  <Plus size={18} color={appTheme.colors.card} strokeWidth={2.4} />
                   <Text style={styles.addMealText}>Add</Text>
                 </Pressable>
               ) : null}

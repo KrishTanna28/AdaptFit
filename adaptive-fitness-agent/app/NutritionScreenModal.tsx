@@ -163,14 +163,7 @@ export default function NutritionScreenModal({ controller }: NutritionScreenModa
                         keyboardShouldPersistTaps="handled"
                         showsVerticalScrollIndicator={false}
                     >
-                        <View
-                            style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                gap: appTheme.spacing.md,
-                            }}
-                        >
+                        <View style={styles.modalHeaderRow}>
                             <Text style={styles.modalTitle}>{modalTitle ?? "Add food entry"}</Text>
 
                             <Pressable
@@ -178,18 +171,9 @@ export default function NutritionScreenModal({ controller }: NutritionScreenModa
                                 accessibilityLabel="Close modal"
                                 disabled={isSaving}
                                 onPress={actions.onClose}
-                                style={{
-                                    width: 36,
-                                    height: 36,
-                                    borderRadius: appTheme.radii.pill,
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    backgroundColor: appTheme.colors.card,
-                                    borderWidth: 1,
-                                    borderColor: appTheme.colors.border,
-                                }}
+                                style={styles.modalIconButton}
                             >
-                                <X size={18} color={appTheme.colors.text} strokeWidth={2.2} />
+                                <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
                             </Pressable>
                         </View>
                         <Text style={styles.hintText}>Meal: {MEAL_LABELS[selectedMeal]}</Text>
@@ -416,7 +400,7 @@ export default function NutritionScreenModal({ controller }: NutritionScreenModa
                         <Text style={styles.fieldLabel}>Quantity (servings)</Text>
                         <View style={styles.quantityRow}>
                             <Pressable style={styles.quantityButton} onPress={actions.decreaseQuantity}>
-                                <Minus size={16} color={appTheme.colors.text} strokeWidth={2.4} />
+                                <Minus size={16} color={appTheme.colors.primary} strokeWidth={2.4} />
                             </Pressable>
                             <TextInput
                                 style={styles.quantityValue}
@@ -427,7 +411,7 @@ export default function NutritionScreenModal({ controller }: NutritionScreenModa
                                 keyboardType="decimal-pad"
                             />
                             <Pressable style={styles.quantityButton} onPress={actions.increaseQuantity}>
-                                <Plus size={16} color={appTheme.colors.text} strokeWidth={2.4} />
+                                <Plus size={16} color={appTheme.colors.primary} strokeWidth={2.4} />
                             </Pressable>
                         </View>
 

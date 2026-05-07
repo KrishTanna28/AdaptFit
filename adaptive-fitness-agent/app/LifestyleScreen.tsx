@@ -483,10 +483,10 @@ export default function LifestyleScreen() {
               accessibilityLabel={"Change lifestyle log date. Current " + formatDateForDisplay(selectedDateKey)}
             >
               <View style={styles.datePickerLeft}>
-                <CalendarDays size={16} color={appTheme.colors.mutedText} strokeWidth={2.2} />
+                <CalendarDays size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
                 <Text style={styles.datePickerValue}>{formatDateForDisplay(selectedDateKey)}</Text>
               </View>
-              <ChevronDown size={16} color={appTheme.colors.mutedText} strokeWidth={2.2} />
+              <ChevronDown size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
             </Pressable>
           </AppCard>
 
@@ -494,7 +494,7 @@ export default function LifestyleScreen() {
             <View style={styles.sectionHeaderRow}>
               <View style={styles.sectionTitleWrap}>
                 <View style={styles.sectionTitleRow}>
-                  <Droplets size={18} color={appTheme.colors.text} strokeWidth={2.2} />
+                  <Droplets size={18} color={appTheme.colors.accent} strokeWidth={2.2} />
                   <Text style={styles.sectionTitle}>Hydration</Text>
                 </View>
                 <Text style={styles.sectionMeta}>
@@ -546,7 +546,7 @@ export default function LifestyleScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={"Add " + String(amount) + " ml water"}
                 >
-                  <Plus size={14} color={appTheme.colors.text} strokeWidth={2.4} />
+                  <Plus size={14} color={appTheme.colors.primary} strokeWidth={2.4} />
                   <Text style={styles.quickButtonText}>{String(amount)} ml</Text>
                 </Pressable>
               ))}
@@ -573,7 +573,7 @@ export default function LifestyleScreen() {
 
           <AppCard style={styles.sectionCard}>
             <View style={styles.sectionTitleRow}>
-              <Thermometer size={18} color={appTheme.colors.text} strokeWidth={2.2} />
+              <Thermometer size={18} color={appTheme.colors.primary} strokeWidth={2.2} />
               <Text style={styles.sectionTitle}>Weather</Text>
             </View>
 
@@ -675,7 +675,7 @@ export default function LifestyleScreen() {
 
           <AppCard style={styles.sectionCard}>
             <View style={styles.sectionTitleRow}>
-              <Moon size={18} color={appTheme.colors.text} strokeWidth={2.2} />
+              <Moon size={18} color={appTheme.colors.primary} strokeWidth={2.2} />
               <Text style={styles.sectionTitle}>Sleep and Stress</Text>
             </View>
 
@@ -731,22 +731,10 @@ export default function LifestyleScreen() {
               <TextInput
                 value={recoveryNotes}
                 onChangeText={setRecoveryNotes}
-                style={{
-                  minHeight: 88,
-                  borderRadius: appTheme.radii.md,
-                  backgroundColor: appTheme.colors.inputBackground,
-                  borderWidth: 1,
-                  borderColor: appTheme.colors.border,
-                  paddingHorizontal: appTheme.spacing.md,
-                  paddingVertical: appTheme.spacing.sm,
-                  color: appTheme.colors.text,
-                  fontSize: 15,
-                  fontWeight: "500",
-                  textAlignVertical: "top",
-                }}
+                style={styles.notesInput}
                 multiline
                 placeholder="Anything affecting recovery today"
-                placeholderTextColor={appTheme.colors.mutedText}
+                placeholderTextColor={appTheme.colors.textMuted}
                 editable={!isSavingRecovery && canEditSelectedDate}
               />
             </View>
@@ -762,13 +750,13 @@ export default function LifestyleScreen() {
           </AppCard>
 
           {authLoading || isLoadingLog ? (
-            <AppCard style={styles.sectionCard}>
+            <AppCard style={[styles.sectionCard, styles.lockedCard]}>
               <Text style={styles.disabledText}>Loading lifestyle log...</Text>
             </AppCard>
           ) : null}
 
           {!canEditSelectedDate ? (
-            <AppCard style={styles.sectionCard}>
+            <AppCard style={[styles.sectionCard, styles.lockedCard]}>
               <Text style={styles.disabledText}>
                 This week is locked for editing, but you can still review the log.
               </Text>

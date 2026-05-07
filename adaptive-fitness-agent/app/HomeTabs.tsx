@@ -3,6 +3,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import type { User } from "firebase/auth/react-native";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { Pizza, Flame, House, Lightbulb, User as UserIcon } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AICoachScreen from "./AICoachScreen";
 import HomeScreen from "./HomeScreen";
@@ -59,7 +60,8 @@ export default function HomeTabs({ user }: HomeTabsProps) {
   const [dailyStepGoal, setDailyStepGoal] = useState(DAILY_STEP_GOAL);
   const [isSavingStepGoal, setIsSavingStepGoal] = useState(false);
   const lastStepSaveRef = useRef({ dateKey: "", steps: -1, savedAt: 0 });
-
+  const insets = useSafeAreaInsets();
+  
   useEffect(() => {
     let isMounted = true;
 
@@ -204,23 +206,24 @@ export default function HomeTabs({ user }: HomeTabsProps) {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: appTheme.colors.text,
-        tabBarInactiveTintColor: appTheme.colors.mutedText,
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "600",
-        },
+        tabBarActiveTintColor: appTheme.colors.tabActive,
+        tabBarInactiveTintColor: appTheme.colors.tabInactive,
+        tabBarLabelStyle: { fontSize: 10, fontWeight: "600" },
         tabBarStyle: {
-          backgroundColor: appTheme.colors.cardAlt,
+          backgroundColor: appTheme.colors.tabBar,
+          borderTopWidth: 1,
           borderTopColor: appTheme.colors.border,
+          height: appTheme.sizes.tabBarHeight + insets.bottom,
+          paddingBottom: Math.max(appTheme.spacing.sm, insets.bottom),
         },
+        tabBarIconStyle: { marginTop: appTheme.spacing.xs },
       }}
     >
       <Tab.Screen
         name="Home"
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <House size={size} color={color} strokeWidth={2.2} />
+          tabBarIcon: ({ color }) => (
+            <House size={appTheme.sizes.tabIcon} color={color} strokeWidth={2.2} />
           ),
         }}
       >
@@ -238,8 +241,8 @@ export default function HomeTabs({ user }: HomeTabsProps) {
         name="Workout"
         component={WorkoutScreen}
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Flame size={size} color={color} strokeWidth={2.2} />
+          tabBarIcon: ({ color }) => (
+            <Flame size={appTheme.sizes.tabIcon} color={color} strokeWidth={2.2} />
           ),
         }}
       />
@@ -248,8 +251,8 @@ export default function HomeTabs({ user }: HomeTabsProps) {
         name="Diet"
         component={NutritionScreen}
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Pizza size={size} color={color} strokeWidth={2.2} />
+          tabBarIcon: ({ color }) => (
+            <Pizza size={appTheme.sizes.tabIcon} color={color} strokeWidth={2.2} />
           ),
         }}
       />
@@ -259,8 +262,8 @@ export default function HomeTabs({ user }: HomeTabsProps) {
         component={AICoachScreen}
         options={{
           title: "AI Coach",
-          tabBarIcon: ({ color, size }) => (
-            <Lightbulb size={size} color={color} strokeWidth={2.2} />
+          tabBarIcon: ({ color }) => (
+            <Lightbulb size={appTheme.sizes.tabIcon} color={color} strokeWidth={2.2} />
           ),
         }}
       />
@@ -268,8 +271,8 @@ export default function HomeTabs({ user }: HomeTabsProps) {
       <Tab.Screen
         name="Profile"
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <UserIcon size={size} color={color} strokeWidth={2.2} />
+          tabBarIcon: ({ color }) => (
+            <UserIcon size={appTheme.sizes.tabIcon} color={color} strokeWidth={2.2} />
           ),
         }}
       >

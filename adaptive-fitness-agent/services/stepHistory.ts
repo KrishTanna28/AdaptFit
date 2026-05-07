@@ -52,11 +52,10 @@ function getEffectiveTargetDays(rangeStart: Date, rangeEnd: Date, now: Date) {
 }
 
 function buildDayLabel(date: Date) {
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function buildMonthLabel(date: Date) {
-  return date.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "2-digit",
+  }).format(date);
 }
 
 export function buildDailyRanges(input: {
@@ -129,7 +128,7 @@ export function buildMonthlyRanges(input: {
 
     ranges.push({
       key: getTodayDateKey(start),
-      label: buildMonthLabel(start),
+      label: buildDayLabel(start),
       start,
       end,
       target: Math.max(0, Math.round(dailyGoal)) * daysInMonth,

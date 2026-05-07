@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { User } from "firebase/auth/react-native";
-import { doc, Firestore, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { addDoc, collection, doc, Firestore, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, Pencil } from "lucide-react-native";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
@@ -199,6 +199,14 @@ function toFirestoreProfilePayload(profile: ProfileFormData) {
     };
 }
 
+function buildProfileHistorySnapshot(profile: ProfileFormData) {
+    const snapshot = toFirestoreProfilePayload(profile);
+    return {
+        ...snapshot,
+        photoDataUri: null,
+    };
+}
+
 function isFilledText(value: string) {
     return value.trim().length > 0;
 }
@@ -270,6 +278,18 @@ export default function ProfileScreen({ user }: ProfileScreenProps) {
                     setDoc(useRef, patch, { merge: true}),
                     FIRESTORE_SAVE_TIMEOUT_MS,
                 );
+
+                if (hasProfileChanges) {
+                    const historyRef = collection(db, "users", user.uid, "profileHistory");
+                    const changedFields = Object.keys(partialProfile);
+
+                    await addDoc(historyRef, {
+                        changedAt: serverTimestamp(),
+                        changedFields,
+                        snapshot: buildProfileHistorySnapshot(nextProfile),
+                        source: "profile_update",
+                    });
+                }
                 if(successTitle){
                     showAlert({title: successTitle, message: "Saved changes"});
                 }
@@ -524,7 +544,7 @@ export default function ProfileScreen({ user }: ProfileScreenProps) {
                                     <Image source={{ uri: profile.photoDataUri }} style={styles.avatarImage} />
                                 ) : (
                                     <View style={styles.avatarFallback}>
-                                        <Camera size={26} color={appTheme.colors.mutedText} strokeWidth={2} />
+                                        <Camera size={26} color={appTheme.colors.primary} strokeWidth={2} />
                                     </View>
                                 )}
                             </Pressable>
@@ -547,17 +567,20 @@ export default function ProfileScreen({ user }: ProfileScreenProps) {
                             ) : null}
                         </View>
                         <Text style={styles.title}>{user.displayName}</Text>
+                        <Text style={styles.subtitle}>{user.email}</Text>
                     </AppCard>
 
                     {shouldShowCompletionPrompt ? (
                         <AppCard style={styles.completionCard}>
-                            <Text style={styles.completionTitle}>Complete you profile</Text>
+                            <View style={styles.completionHeaderRow}>
+                                <Text style={styles.completionTitle}>Complete your profile</Text>
+                                <Text style={styles.completionPercent}>{completionPercent}%</Text>
+                            </View>
                             <View style={styles.progressTrack}>
                                 <View
                                     style={[styles.progressFill, { width: `${completionPercent}%` as `${number}%` }]}
                                 />
                             </View>
-                            <Text style={styles.progressCaption}>{completionPercent}% complete</Text>
                         </AppCard>
                     ) : null}
 
@@ -570,7 +593,7 @@ export default function ProfileScreen({ user }: ProfileScreenProps) {
                                 accessibilityRole="button"
                                 accessibilityLabel="Edit profile details"
                             >
-                                <Pencil size={18} color={appTheme.colors.text} strokeWidth={2.2} />
+                                <Pencil size={18} color={appTheme.colors.primary} strokeWidth={2.2} />
                             </Pressable>
                         </View>
 
@@ -581,7 +604,7 @@ export default function ProfileScreen({ user }: ProfileScreenProps) {
                             </View>
                         ))}
                     </AppCard>
-                    <AppButton title="Log out" onPress={handleLogout} />
+                    <AppButton title="Log out" variant="secondary" tone="danger" onPress={handleLogout} />
                     
                 </View>
                 

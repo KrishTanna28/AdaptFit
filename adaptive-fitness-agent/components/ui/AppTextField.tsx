@@ -21,9 +21,12 @@ export default function AppTextField({
   isPasswordField = false,
   secureTextEntry,
   placeholderTextColor,
+  onFocus,
+  onBlur,
   ...props
 }: AppTextFieldProps) {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
 
   const shouldHideText = isPasswordField
     ? !isPasswordVisible
@@ -33,12 +36,20 @@ export default function AppTextField({
     <View style={styles.wrapper}>
       <Text style={styles.label}>{label}</Text>
 
-      <View style={styles.inputRow}>
+      <View style={[styles.inputRow, isFocused && styles.inputRowFocused]}>
         <TextInput
           style={[styles.input, isPasswordField && styles.inputWithButton, style]}
           secureTextEntry={shouldHideText}
           {...props}
-          placeholderTextColor={placeholderTextColor ?? appTheme.colors.mutedText}
+          onFocus={(event) => {
+            setIsFocused(true);
+            onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            setIsFocused(false);
+            onBlur?.(event);
+          }}
+          placeholderTextColor={placeholderTextColor ?? appTheme.colors.textMuted}
         />
 
         {isPasswordField ? (
@@ -50,13 +61,13 @@ export default function AppTextField({
             {isPasswordVisible ? (
               <EyeOff
                 size={20}
-                color={appTheme.colors.mutedText}
+                color={appTheme.colors.textSecondary}
                 strokeWidth={2}
               />
             ) : (
               <Eye
                 size={20}
-                color={appTheme.colors.mutedText}
+                color={appTheme.colors.textSecondary}
                 strokeWidth={2}
               />
             )}
