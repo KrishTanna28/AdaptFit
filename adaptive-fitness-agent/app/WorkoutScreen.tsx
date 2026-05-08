@@ -854,7 +854,7 @@ export default function WorkoutScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Add workout"
                 >
-                  <Plus size={18} color={appTheme.colors.card} strokeWidth={2.4} />
+                  <Plus size={18} color={appTheme.colors.onPrimary} strokeWidth={2.4} />
                   <Text style={styles.addMealText}>Add</Text>
                 </Pressable>
               ) : null}

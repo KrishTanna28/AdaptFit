@@ -4,6 +4,7 @@ import { createClient } from "redis";
 import { mountCoachRoutes } from "./coach/routes.js";
 import { generatePlateFoodVisionResponse } from "./coach/geminiClient.js";
 import { mountFormAnalysisRoutes } from "./formAnalysis/routes.js";
+import { mountHomeRoutes } from "./home/routes.js";
 
 dotenv.config();
 
@@ -1233,6 +1234,7 @@ app.post("/api/foods/plate/analyze", async (req, res) => {
 });
 
 mountCoachRoutes(app);
+mountHomeRoutes(app);
 mountFormAnalysisRoutes(app);
 
 app.listen(PORT, () => {

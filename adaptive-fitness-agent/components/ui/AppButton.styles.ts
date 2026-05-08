@@ -33,7 +33,7 @@ export const styles = StyleSheet.create({
     fontWeight: "600",
   },
   primaryText: {
-    color: appTheme.colors.card,
+    color: appTheme.colors.onPrimary,
   },
   secondaryText: {
     color: appTheme.colors.primary,

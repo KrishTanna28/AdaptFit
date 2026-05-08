@@ -333,7 +333,7 @@ export const styles = StyleSheet.create({
     height: appTheme.sizes.iconButtonXs,
     borderRadius: appTheme.radii.pill,
     backgroundColor: appTheme.colors.primary,
-    color: appTheme.colors.card,
+    color: appTheme.colors.onPrimary,
     textAlign: "center",
     lineHeight: appTheme.sizes.iconButtonXs,
     fontWeight: "700",

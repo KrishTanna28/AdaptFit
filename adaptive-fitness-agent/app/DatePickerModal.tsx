@@ -66,7 +66,7 @@ function DatePickerModalImpl({
       [draftDateKey]: {
         selected: true,
         selectedColor: appTheme.colors.primary,
-        selectedTextColor: appTheme.colors.card,
+        selectedTextColor: appTheme.colors.onPrimary,
       },
     }),
     [draftDateKey],

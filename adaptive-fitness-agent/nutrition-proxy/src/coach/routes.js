@@ -1,4 +1,5 @@
 import express from "express";
+import { createHash } from "node:crypto";
 
 import { ensureConversation, appendConversationMessage, listConversationMessages } from "./conversationStore.js";
 import { loadCoachContext } from "./context.js";
@@ -9,6 +10,7 @@ import {
   transcribeAudioWithVertex,
 } from "./geminiClient.js";
 import { buildCoachSystemPrompt, buildCoachUserPrompt } from "./prompt.js";
+import { buildCacheKey, cacheGetJson, cacheSetJson } from "../redisCache.js";
 
 const MAX_MESSAGE_LENGTH = 4000;
 const MAX_ATTACHMENTS = 5;
@@ -17,6 +19,8 @@ const MAX_AUDIO_BASE64_LENGTH = 8 * 1024 * 1024;
 const MAX_WORKOUT_TITLE_LENGTH = 80;
 const MAX_WORKOUT_NAME_LENGTH = 80;
 const MAX_WORKOUT_EXERCISES = 16;
+const HOME_INSIGHT_TTL_SECONDS = 7 * 24 * 60 * 60;
+const HOME_INSIGHT_CACHE_VERSION = "v1";
 
 const PROVIDER_ACCESS_DENIED_PATTERN =
   /denied access|permission[_\s-]?denied|api key not valid|insufficient permissions|contact support|forbidden|status:\s*403|api has not been used|disabled/i;
@@ -211,6 +215,46 @@ function buildHomeInsightsPrompt(context) {
   ].join("\n");
 }
 
+function buildHomeInsightSignature(context) {
+  const signatureInput = {
+    currentDateKey: context.currentDateKey,
+    profile: context.profile,
+    stepGoal: context.stepGoal,
+    recency: context.recency,
+    nutrition: {
+      totalCalories: context.nutrition?.totalCalories,
+      totalProtein: context.nutrition?.totalProtein,
+      totalMealsLogged: context.nutrition?.totalMealsLogged,
+      daily: context.nutrition?.daily,
+    },
+    workouts: {
+      sessions: context.workouts?.sessions,
+      totalDurationMin: context.workouts?.totalDurationMin,
+      totalActiveCalories: context.workouts?.totalActiveCalories,
+      daily: context.workouts?.daily,
+    },
+    lifestyle: {
+      daysLogged: context.lifestyle?.daysLogged,
+      avgSleepHours: context.lifestyle?.avgSleepHours,
+      avgHydrationProgressPercent: context.lifestyle?.avgHydrationProgressPercent,
+      daily: context.lifestyle?.daily,
+    },
+    steps: {
+      totalSteps: context.steps?.totalSteps,
+      stepsToday: context.steps?.stepsToday,
+      stepGoalToday: context.steps?.stepGoalToday,
+      daily: context.steps?.daily,
+    },
+    signals: context.signals,
+    window: context.window,
+  };
+
+  return createHash("sha256")
+    .update(JSON.stringify(signatureInput))
+    .digest("hex")
+    .slice(0, 32);
+}
+
 function buildWorkoutReply(workoutPlan) {
   const count = workoutPlan.exercises.length;
   const label = count === 1 ? "exercise" : "exercises";
@@ -383,6 +427,22 @@ export function mountCoachRoutes(app) {
         windowDays,
         includeAllHistory: true,
       });
+      const signature = buildHomeInsightSignature(context);
+      const cacheKey = buildCacheKey(
+        [HOME_INSIGHT_CACHE_VERSION, "home-insight", uid, String(windowDays), signature],
+        "coach",
+      );
+      const cached = await cacheGetJson(cacheKey);
+
+      if (cached?.insight) {
+        res.set("X-Coach-Insight-Cache", "HIT");
+        return res.json({
+          ...cached,
+          cached: true,
+          contextSignals: context.signals,
+          contextWindow: context.window,
+        });
+      }
 
       const insightResponse = await generateHomeInsightsResponse({
         prompt: buildHomeInsightsPrompt(context),
@@ -396,13 +456,20 @@ export function mountCoachRoutes(app) {
         });
       }
 
-      return res.json({
+      const payload = {
         insight,
         model: insightResponse.model,
         usage: insightResponse.usage,
         contextSignals: context.signals,
         contextWindow: context.window,
-      });
+        contextSignature: signature,
+        cached: false,
+      };
+
+      await cacheSetJson(cacheKey, payload, HOME_INSIGHT_TTL_SECONDS);
+
+      res.set("X-Coach-Insight-Cache", "MISS");
+      return res.json(payload);
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown error";
       const statusCode = inferCoachErrorStatus(detail, 500);

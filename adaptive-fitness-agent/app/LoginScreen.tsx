@@ -23,7 +23,7 @@ import {
   Dumbbell,
   Mic,
   Moon,
-  Sparkles,
+  Lightbulb,
   TrendingUp,
 } from "lucide-react-native";
 import {
@@ -134,8 +134,8 @@ function HeroSystem({
               <Stop offset="1" stopColor={appTheme.colors.success} stopOpacity="0.75" />
             </LinearGradient>
             <LinearGradient id="body" x1="96" y1="72" x2="230" y2="278">
-              <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0.95" />
-              <Stop offset="1" stopColor="#D7E6FF" stopOpacity="0.92" />
+              <Stop offset="0" stopColor={appTheme.colors.textPrimary} stopOpacity="0.95" />
+              <Stop offset="1" stopColor={appTheme.colors.accentBlue} stopOpacity="0.78" />
             </LinearGradient>
           </Defs>
           <Circle
@@ -150,10 +150,10 @@ function HeroSystem({
             cx="160"
             cy="160"
             r="88"
-            stroke="#D7F9FF"
-            strokeOpacity="0.28"
+            stroke={appTheme.colors.accentBlue}
+            strokeOpacity="0.32"
             strokeWidth="1.5"
-            fill="rgba(255,255,255,0.5)"
+            fill="rgba(31,41,55,0.58)"
           />
           <Circle cx="160" cy="94" r="20" fill="url(#body)" />
           <Path
@@ -165,7 +165,7 @@ function HeroSystem({
           />
           <Path
             d="M160 122 C183 148 204 173 231 190"
-            stroke="#BDF4FF"
+            stroke={appTheme.colors.accentBlue}
             strokeOpacity="0.86"
             strokeWidth="10"
             strokeLinecap="round"
@@ -173,7 +173,7 @@ function HeroSystem({
           />
           <Path
             d="M144 172 C168 185 188 207 207 244"
-            stroke="#FFFFFF"
+            stroke={appTheme.colors.textPrimary}
             strokeOpacity="0.82"
             strokeWidth="11"
             strokeLinecap="round"
@@ -197,7 +197,7 @@ function HeroSystem({
           />
           <Path
             d="M65 84 C98 67 136 59 174 65 C213 71 245 91 269 119"
-            stroke="#FFFFFF"
+            stroke={appTheme.colors.textPrimary}
             strokeOpacity="0.22"
             strokeWidth="2"
             strokeLinecap="round"
@@ -224,7 +224,7 @@ function HeroSystem({
           { transform: [{ translateY: floatY }] },
         ]}
       >
-        <Sparkles color={appTheme.colors.primary} size={18} strokeWidth={2.2} />
+        <Lightbulb color={appTheme.colors.primary} size={18} strokeWidth={2.2} />
         <Text style={styles.orbitLabel}>Sarathi</Text>
         <Text style={styles.orbitValue}>Coach</Text>
       </Animated.View>
@@ -400,7 +400,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <View style={styles.backgroundLayer}>
         <View style={[styles.glow, styles.glowMint]} />
         <View style={[styles.glow, styles.glowBlue]} />
@@ -465,7 +465,7 @@ export default function LoginScreen() {
             {capabilities.map(({ Icon, title, copy }) => (
               <View key={title} style={styles.capabilityCard}>
                 <View style={styles.capabilityIcon}>
-                  <Icon color={appTheme.colors.card} size={18} strokeWidth={2.2} />
+                  <Icon color={appTheme.colors.onPrimary} size={18} strokeWidth={2.2} />
                 </View>
                 <Text style={styles.capabilityTitle}>{title}</Text>
                 <Text style={styles.capabilityCopy}>{copy}</Text>
@@ -476,7 +476,7 @@ export default function LoginScreen() {
 
         <View style={styles.coachPanel}>
           <View style={styles.coachOrb}>
-            <Sparkles color={appTheme.colors.primary} size={22} strokeWidth={2.4} />
+            <Lightbulb color={appTheme.colors.primary} size={22} strokeWidth={2.4} />
           </View>
           <Text style={styles.coachTitle}>Sarathi keeps the plan human.</Text>
           <Text style={styles.coachCopy}>

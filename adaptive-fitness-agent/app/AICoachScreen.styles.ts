@@ -143,7 +143,7 @@ export const styles = StyleSheet.create({
     color: appTheme.colors.textPrimary,
   },
   userMessageText: {
-    color: appTheme.colors.card,
+    color: appTheme.colors.onPrimary,
   },
   workoutCard: {
     maxWidth: "85%",

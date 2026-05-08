@@ -225,7 +225,7 @@ export const styles = StyleSheet.create({
   },
   manualBarcodeButtonText: {
     ...appTheme.typography.label,
-    color: appTheme.colors.card,
+    color: appTheme.colors.onPrimary,
     fontWeight: "700",
   },
   manualBarcodeButtonTextDisabled: {
@@ -312,7 +312,7 @@ export const styles = StyleSheet.create({
     color: appTheme.colors.textPrimary,
   },
   modalTitleOnDark: {
-    color: appTheme.colors.card,
+    color: appTheme.colors.textPrimary,
   },
   modalIconButton: {
     width: appTheme.sizes.iconButtonMd,

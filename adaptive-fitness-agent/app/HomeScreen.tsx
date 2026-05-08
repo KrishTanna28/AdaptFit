@@ -16,30 +16,23 @@ import {
   reauthenticateWithCredential,
   type User,
 } from "firebase/auth/react-native";
-import { doc, getDoc } from "firebase/firestore";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { Flame, Lightbulb, Droplets, Moon, X } from "lucide-react-native";
 import Svg, { Circle } from "react-native-svg";
 import { useFocusEffect } from "@react-navigation/native";
-import { loadDailyNutritionLog } from "../services/nutritionLog";
-import { loadDailyWorkoutLog, type LoggedWorkoutEntry } from "../services/workoutLog";
+import type { LoggedWorkoutEntry } from "../services/workoutLog";
 import { getTodayDateKey } from "@/services/helperFunctions";
-import { auth, db } from "../services/firebase";
+import { auth } from "../services/firebase";
 import {
   calculateAdaptiveHydrationGoal,
   EMPTY_RECOVERY,
   EMPTY_WEATHER,
-  loadDailyLifestyleLog,
   normalizeLifestyleLog,
   upsertDailyLifestyleLog,
   type DailyLifestyleLog,
   type RecoveryLog,
 } from "../services/lifestyleLog";
-import {
-  buildDailyRanges,
-  loadStepsForRanges,
-  type StepHistoryPoint,
-} from "../services/stepHistory";
+import type { StepHistoryPoint } from "../services/stepHistory";
 import {
   getUserFriendlyErrorMessage,
   useAppAlert,
@@ -49,6 +42,7 @@ import AppCard from "../components/ui/AppCard";
 import AppSkeleton from "../components/ui/AppSkeleton";
 import AppTextField from "../components/ui/AppTextField";
 import { getHomeCoachInsight, type HomeCoachInsight } from "../services/aiCoach";
+import { getCachedHomeSummary } from "../services/homeCacheApi";
 import type { LiveStepCounter } from "../hooks/useLiveStepCounter";
 import { appTheme } from "../theme/designSystem";
 import { globalStyles } from "../theme/globalStyles";
@@ -69,7 +63,6 @@ const GOAL_ROW_HEIGHT = 44;
 const STEPS_PROGRESS_THUMB_WIDTH = 48;
 const QUICK_WATER_AMOUNTS = [250, 500, 750];
 const RATING_OPTIONS = [1, 2, 3, 4, 5];
-const STREAK_LOOKBACK_DAYS = 30;
 const STEP_TREND_DAYS = 7;
 const MINI_CHART_HEIGHT = 90;
 const MINI_CHART_SPACING = 22;
@@ -121,29 +114,6 @@ function parseOptionalNumber(value: string): number | null {
 
   const n = Number(trimmed);
   return Number.isFinite(n) ? n : null;
-}
-
-function parseProfileWeight(rawProfile: unknown): number | null {
-  if (!rawProfile || typeof rawProfile !== "object") {
-    return null;
-  }
-
-  const value = Number((rawProfile as { weightKg?: unknown }).weightKg);
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function buildRecentDateKeys(count: number, now = new Date()) {
-  const out: string[] = [];
-  const base = new Date(now);
-  base.setHours(0, 0, 0, 0);
-
-  for (let offset = 0; offset < count; offset += 1) {
-    const day = new Date(base);
-    day.setDate(base.getDate() - offset);
-    out.push(getTodayDateKey(day));
-  }
-
-  return out;
 }
 
 export default function HomeScreen({
@@ -238,84 +208,33 @@ export default function HomeScreen({
   const [isLoadingHomeInsight, setIsLoadingHomeInsight] = useState(false);
   const [homeInsightError, setHomeInsightError] = useState("");
 
-  const loadHomeMetrics = useCallback(async () => {
+  const loadHomeSummary = useCallback(async () => {
     setIsLoadingCaloriesIntake(true);
     setIsLoadingLifestyle(true);
+    setIsLoadingStepHistory(true);
     try {
-      const todayKey = getTodayDateKey();
-      const [nutritionLog, workoutLog, nextLifestyleLog, userSnapshot] = await Promise.all([
-        loadDailyNutritionLog(user.uid, todayKey),
-        loadDailyWorkoutLog(user.uid, todayKey),
-        loadDailyLifestyleLog(user.uid, todayKey),
-        getDoc(doc(db, "users", user.uid)),
-      ]);
+      const summary = await getCachedHomeSummary({
+        dailyGoal: liveStepCounter.goal,
+      });
 
-      const totalCalories = nutritionLog.entries.reduce((sum, entry) => {
-        const value = Number(entry.calories);
-        return Number.isFinite(value) ? sum + value : sum;
-      }, 0);
-
-      const totalWorkoutCalories = workoutLog.entries.reduce((sum, entry) => {
-        const value = Number(entry.caloriesActive);
-        return Number.isFinite(value) ? sum + Math.max(0, value) : sum;
-      }, 0);
-
-      setCaloriesIntake(Math.round(totalCalories));
-      setWorkoutCaloriesBurned(Math.round(totalWorkoutCalories));
-      setWorkoutEntries(workoutLog.entries);
-      setLifestyleLog(nextLifestyleLog);
-      setProfileWeightKg(parseProfileWeight(userSnapshot.data()?.profile));
-    } catch (error) {
+      setCaloriesIntake(Math.round(summary.caloriesIntake));
+      setWorkoutCaloriesBurned(Math.round(summary.workoutCaloriesBurned));
+      setWorkoutEntries(summary.workoutEntries);
+      setLifestyleLog(summary.lifestyleLog);
+      setProfileWeightKg(summary.profileWeightKg);
+      setWorkoutStreak(summary.workoutStreak);
+      setStepHistory(summary.stepHistory.slice(0, STEP_TREND_DAYS));
+    } catch {
       setCaloriesIntake(0);
       setWorkoutCaloriesBurned(0);
       setWorkoutEntries([]);
       setLifestyleLog(null);
       setProfileWeightKg(null);
+      setWorkoutStreak(0);
+      setStepHistory([]);
     } finally {
       setIsLoadingCaloriesIntake(false);
       setIsLoadingLifestyle(false);
-    }
-  }, [user.uid]);
-
-  const loadWorkoutStreak = useCallback(async () => {
-    try {
-      const dateKeys = buildRecentDateKeys(STREAK_LOOKBACK_DAYS);
-      const logs = await Promise.all(
-        dateKeys.map((dateKey) =>
-          loadDailyWorkoutLog(user.uid, dateKey).catch(() => null),
-        ),
-      );
-
-      const logsToCount = logs[0] ? logs : logs.slice(1);
-
-      let streak = 0;
-      for (const log of logsToCount) {
-        if (log && log.entries.length > 0) {
-          streak += 1;
-        } else {
-          break;
-        }
-      }
-
-      setWorkoutStreak(streak);
-    } catch {
-      setWorkoutStreak(0);
-    }
-  }, [user.uid]);
-
-  const loadStepHistory = useCallback(async () => {
-    setIsLoadingStepHistory(true);
-    try {
-      const ranges = buildDailyRanges({
-        endDate: new Date(),
-        count: STEP_TREND_DAYS,
-        dailyGoal: liveStepCounter.goal,
-      });
-      const points = await loadStepsForRanges(ranges, { uid: user.uid });
-      setStepHistory(points);
-    } catch {
-      setStepHistory([]);
-    } finally {
       setIsLoadingStepHistory(false);
     }
   }, [liveStepCounter.goal, user.uid]);
@@ -343,20 +262,15 @@ export default function HomeScreen({
 
   useFocusEffect(
     useCallback(() => {
-      loadHomeMetrics().catch(() => {
+      loadHomeSummary().catch(() => {
         setIsLoadingCaloriesIntake(false);
         setIsLoadingLifestyle(false);
-      });
-      loadWorkoutStreak().catch(() => {
-        setWorkoutStreak(0);
-      });
-      loadStepHistory().catch(() => {
         setIsLoadingStepHistory(false);
       });
       loadHomeInsight().catch(() => {
         setIsLoadingHomeInsight(false);
       });
-    }, [loadHomeInsight, loadHomeMetrics, loadStepHistory, loadWorkoutStreak])
+    }, [loadHomeInsight, loadHomeSummary])
   );
 
   useEffect(() => {
@@ -485,6 +399,7 @@ export default function HomeScreen({
         ),
       );
       setHydrationInput(String(intakeMl));
+      void loadHomeInsight();
     } finally {
       setIsSavingHydration(false);
     }
@@ -547,6 +462,7 @@ export default function HomeScreen({
         setLifestyleLog((prev) =>
           normalizeLifestyleLog({ ...(prev ?? {}), recovery }, todayKey),
         );
+        void loadHomeInsight();
         setIsSleepModalVisible(false);
       } finally {
         setIsSavingSleep(false);

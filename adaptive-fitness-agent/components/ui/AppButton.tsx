@@ -60,7 +60,7 @@ export default function AppButton({
       >
         {loading ? (
           <ActivityIndicator
-            color={isPrimary ? appTheme.colors.card : appTheme.colors.primary}
+            color={isPrimary ? appTheme.colors.onPrimary : appTheme.colors.primary}
           />
         ) : (
           <Text

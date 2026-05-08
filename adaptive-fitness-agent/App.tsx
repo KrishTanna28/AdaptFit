@@ -21,7 +21,7 @@ const navigationTheme = {
 export default function App() {
   return (
     <AppAlertProvider>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <NavigationContainer theme={navigationTheme}>
         <AuthGate />
       </NavigationContainer>

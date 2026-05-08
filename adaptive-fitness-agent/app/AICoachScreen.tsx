@@ -23,7 +23,7 @@ import {
   VolumeX,
 } from "lucide-react-native";
 import { doc, getDoc } from "firebase/firestore";
-
+import { useFocusEffect } from "@react-navigation/native";
 import AppButton from "../components/ui/AppButton";
 import { getUserFriendlyErrorMessage, useAppAlert } from "../components/ui/AppAlert";
 import { useAuthUser } from "../hooks/useAuthUser";
@@ -269,6 +269,12 @@ export default function AICoachScreen() {
   const [loadingWorkoutMessageId, setLoadingWorkoutMessageId] = useState<string | null>(null);
   const [profileForCalories, setProfileForCalories] = useState<UserMetProfile | null>(null);
 
+  const hasPlayedIntroRef = useRef(false);
+
+  const [animatedTitle, setAnimatedTitle] = useState("");
+  const [animatedSubtitle, setAnimatedSubtitle] = useState("");
+  const [animatedHelper, setAnimatedHelper] = useState("");
+
   useEffect(() => {
     return () => {
       const recording = recordingRef.current;
@@ -317,6 +323,52 @@ export default function AICoachScreen() {
 
   const hasStartedChat = messages.length > 0 || isSending;
   const greetingName = getDisplayName(user);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (hasStartedChat) {
+        return;
+      }
+
+      let mounted = true;
+
+      setAnimatedTitle("");
+      setAnimatedSubtitle("");
+      setAnimatedHelper("");
+
+      const typeText = async (
+        text: string,
+        setter: React.Dispatch<React.SetStateAction<string>>,
+        speed = 20
+      ) => {
+        for (let i = 0; i <= text.length; i++) {
+          if (!mounted) return;
+
+          setter(text.slice(0, i));
+
+          await new Promise((resolve) => setTimeout(resolve, speed));
+        }
+      };
+
+      const runAnimation = async () => {
+        await typeText(`Hi, ${greetingName}`, setAnimatedTitle, 30);
+
+        await new Promise((r) => setTimeout(r, 150));
+
+        await typeText(
+          "Where should we start today?",
+          setAnimatedSubtitle,
+          22
+        );
+      };
+
+      runAnimation();
+
+      return () => {
+        mounted = false;
+      };
+    }, [hasStartedChat, greetingName])
+  );
 
   const appendMessage = (message: CoachChatMessage) => {
     setMessages((prev) => [...prev, message]);
@@ -681,7 +733,7 @@ export default function AICoachScreen() {
           disabled={isSending || isTranscribing}
         >
           {isRecording ? (
-            <Square size={16} color={appTheme.colors.card} strokeWidth={2.2} />
+            <Square size={16} color={appTheme.colors.onPrimary} strokeWidth={2.2} />
           ) : (
             <Mic size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
           )}
@@ -709,7 +761,7 @@ export default function AICoachScreen() {
         >
           <SendHorizontal
             size={18}
-            color={!canSend ? appTheme.colors.textMuted : appTheme.colors.card}
+            color={!canSend ? appTheme.colors.textMuted : appTheme.colors.onPrimary}
             strokeWidth={2.2}
           />
         </Pressable>
@@ -730,14 +782,19 @@ export default function AICoachScreen() {
         {!hasStartedChat ? (
           <View style={styles.emptyState}>
             <View style={styles.emptyHeroText}>
-              <Text style={styles.emptyTitle}>Hi, {greetingName}</Text>
-              <Text style={styles.emptySubtitle}>Where should we start today?</Text>
-              <Text style={styles.emptyHelper}>
-                Ask for a workout, nutrition help, recovery advice, or a quick push to stay consistent.
+              <Text style={styles.emptyTitle}>
+                {animatedTitle}
+              </Text>
+
+              <Text style={styles.emptySubtitle}>
+                {animatedSubtitle}
               </Text>
             </View>
 
             {renderComposer("center")}
+            <Text style={styles.emptyHelper}>
+              Ask for a workout, nutrition help, recovery advice, or a quick push to stay consistent.
+            </Text>
           </View>
         ) : (
           <>

@@ -17,6 +17,7 @@ import {
   loadStepsForRanges,
   type StepHistoryPoint,
 } from "../services/stepHistory";
+import { getCachedStepHistory } from "../services/homeCacheApi";
 import { styles } from "./StepsHistoryModal.styles";
 
 type Timeframe = "days" | "weeks" | "months" | "years";
@@ -243,7 +244,18 @@ export default function StepsHistoryModal({
                 ? buildMonthlyRanges({ endDate: now, count, dailyGoal, offset })
                 : buildYearlyRanges({ endDate: now, count, dailyGoal, offset });
 
-        const points = await loadStepsForRanges(ranges, { uid: userId });
+        let points: StepHistoryPoint[];
+        try {
+          const cached = await getCachedStepHistory({
+            range,
+            offset,
+            count,
+            dailyGoal,
+          });
+          points = cached.points;
+        } catch {
+          points = await loadStepsForRanges(ranges, { uid: userId });
+        }
 
         setPointsByRange((prev) => ({
           ...prev,

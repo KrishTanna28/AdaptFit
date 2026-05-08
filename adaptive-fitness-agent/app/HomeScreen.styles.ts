@@ -80,7 +80,7 @@ export const styles = StyleSheet.create({
     backgroundColor: appTheme.colors.accent,
   },
   stepsMetricIconCalories: {
-    backgroundColor: "#FF5CAD",
+    backgroundColor: appTheme.colors.accentPurple,
   },
   stepsMiniMetricText: {
     fontSize: 13,
@@ -558,7 +558,7 @@ export const styles = StyleSheet.create({
   },
   goalModalSaveText: {
     ...appTheme.typography.label,
-    color: appTheme.colors.card,
+    color: appTheme.colors.onPrimary,
     fontWeight: "700",
   },
 });

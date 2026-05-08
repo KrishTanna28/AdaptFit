@@ -38,7 +38,7 @@ export const styles = StyleSheet.create({
     paddingVertical: appTheme.spacing.lg,
   },
   primaryButtonText: {
-    color: appTheme.colors.card,
+    color: appTheme.colors.onPrimary,
     fontSize: 15,
     fontWeight: "600",
   },
