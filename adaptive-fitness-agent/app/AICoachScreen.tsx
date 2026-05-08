@@ -12,21 +12,17 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { SafeAreaView } from "react-native-safe-area-context";
-import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { Audio } from "expo-av";
 import * as Speech from "expo-speech";
 import {
   Mic,
-  Paperclip,
   SendHorizontal,
   Square,
   Volume2,
   VolumeX,
-  X,
 } from "lucide-react-native";
 import { doc, getDoc } from "firebase/firestore";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AppButton from "../components/ui/AppButton";
 import { getUserFriendlyErrorMessage, useAppAlert } from "../components/ui/AppAlert";
@@ -34,7 +30,6 @@ import { useAuthUser } from "../hooks/useAuthUser";
 import {
   sendCoachMessage,
   transcribeCoachAudio,
-  type CoachInputAttachment,
   type CoachChatMessage,
   type CoachWorkoutPlan,
 } from "../services/aiCoach";
@@ -62,16 +57,6 @@ import { styles } from "./AICoachScreen.styles";
 //   "Give me motivation for today",
 // ];
 
-const STARTER_MESSAGE: CoachChatMessage = {
-  id: "starter",
-  role: "assistant",
-  content:
-    "I am Drona, your fitness coach. Ask me anything about workouts, nutrition, recovery, or consistency and I will personalize it using your logged data.",
-  createdAt: new Date().toISOString(),
-};
-
-const MAX_ATTACHMENTS = 5;
-const MAX_ATTACHMENT_CHARS = 12000;
 const MAX_WORKOUT_EXERCISES = 16;
 const WORKOUT_DEFAULTS = {
   secPerRep: 4,
@@ -79,14 +64,6 @@ const WORKOUT_DEFAULTS = {
   minSessionMin: 5,
 };
 const WORKOUT_INTENSITY: MetIntensity = "moderate";
-
-type PendingAttachment = {
-  id: string;
-  name: string;
-  mimeType: string;
-  content: string;
-  charLength: number;
-};
 
 function getUnknownErrorMessage(error: unknown, fallback: string) {
   const mapped = getUserFriendlyErrorMessage(error, "").trim();
@@ -96,10 +73,6 @@ function getUnknownErrorMessage(error: unknown, fallback: string) {
 
   const detail = error instanceof Error ? error.message.trim() : "";
   return detail || fallback;
-}
-
-function toAttachmentPreviewLabel(attachment: PendingAttachment) {
-  return `${attachment.name} (${String(attachment.charLength)} chars)`;
 }
 
 function normalizeAssistantReply(raw: string) {
@@ -268,21 +241,27 @@ function parseUserMetProfile(raw: unknown): UserMetProfile {
   };
 }
 
+function getDisplayName(user: { displayName?: string | null; email?: string | null } | null | undefined) {
+  const displayName = user?.displayName?.trim();
+  if (displayName) {
+    return displayName.split(/\s+/)[0] ?? displayName;
+  }
+
+  const emailName = user?.email?.split("@")[0]?.trim();
+  return emailName || "there";
+}
+
 export default function AICoachScreen() {
   const { showAlert } = useAppAlert();
   const { user } = useAuthUser();
   const navigation = useNavigation<BottomTabNavigationProp<HomeTabParamList>>();
   const chatScrollRef = useRef<ScrollView | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
-  const insets = useSafeAreaInsets();
 
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
-  const [messages, setMessages] = useState<CoachChatMessage[]>([STARTER_MESSAGE]);
-  const [contextSignals, setContextSignals] = useState<string[]>([]);
+  const [messages, setMessages] = useState<CoachChatMessage[]>([]);
   const [draftMessage, setDraftMessage] = useState("");
-  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [isSending, setIsSending] = useState(false);
-  const [isPickingFile, setIsPickingFile] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isAutoSpeakEnabled, setIsAutoSpeakEnabled] = useState(false);
@@ -333,8 +312,11 @@ export default function AICoachScreen() {
   }, [user?.uid]);
 
   const canSend = useMemo(() => {
-    return (draftMessage.trim().length > 0 || pendingAttachments.length > 0) && !isSending && !isTranscribing;
-  }, [draftMessage, pendingAttachments.length, isSending, isTranscribing]);
+    return draftMessage.trim().length > 0 && !isSending && !isTranscribing;
+  }, [draftMessage, isSending, isTranscribing]);
+
+  const hasStartedChat = messages.length > 0 || isSending;
+  const greetingName = getDisplayName(user);
 
   const appendMessage = (message: CoachChatMessage) => {
     setMessages((prev) => [...prev, message]);
@@ -373,78 +355,6 @@ export default function AICoachScreen() {
       onStopped: () => setSpeakingMessageId(null),
       onError: () => setSpeakingMessageId(null),
     });
-  };
-
-  const handlePickFiles = async () => {
-    if (isPickingFile || isSending || isRecording || isTranscribing) {
-      return;
-    }
-
-    setIsPickingFile(true);
-
-    try {
-      const pickerResult = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
-        multiple: true,
-        copyToCacheDirectory: true,
-      });
-
-      if (pickerResult.canceled) {
-        return;
-      }
-
-      const nextAttachments: PendingAttachment[] = [];
-
-      for (const asset of pickerResult.assets) {
-        if (nextAttachments.length + pendingAttachments.length >= MAX_ATTACHMENTS) {
-          break;
-        }
-
-        const mimeType = typeof asset.mimeType === "string" ? asset.mimeType : "text/plain";
-
-        try {
-          const rawText = await FileSystem.readAsStringAsync(asset.uri, {
-            encoding: FileSystem.EncodingType.UTF8,
-          });
-
-          const trimmed = rawText.trim();
-          if (!trimmed) {
-            continue;
-          }
-
-          const content = trimmed.slice(0, MAX_ATTACHMENT_CHARS);
-          nextAttachments.push({
-            id: `${asset.name}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            name: asset.name,
-            mimeType,
-            content,
-            charLength: content.length,
-          });
-        } catch {
-          showAlert({
-            title: "Unsupported file",
-            message: `${asset.name} could not be parsed as text. Please attach text-based files.`,
-          });
-        }
-      }
-
-      if (!nextAttachments.length) {
-        return;
-      }
-
-      setPendingAttachments((prev) => [...prev, ...nextAttachments].slice(0, MAX_ATTACHMENTS));
-    } catch (error) {
-      showAlert({
-        title: "File attach failed",
-        message: getUnknownErrorMessage(error, "Could not attach files right now."),
-      });
-    } finally {
-      setIsPickingFile(false);
-    }
-  };
-
-  const removeAttachment = (id: string) => {
-    setPendingAttachments((prev) => prev.filter((item) => item.id !== id));
   };
 
   const startRecording = async () => {
@@ -692,35 +602,21 @@ export default function AICoachScreen() {
 
   const handleSend = async (inputText?: string) => {
     const messageText = (inputText ?? draftMessage).trim();
-    const attachmentsToSend: CoachInputAttachment[] = pendingAttachments.map((attachment) => ({
-      name: attachment.name,
-      mimeType: attachment.mimeType,
-      content: attachment.content,
-    }));
-
-    const fallbackPrompt = attachmentsToSend.length
-      ? "Please analyze my attached files and answer my request."
-      : "";
-    const outboundPrompt = messageText || fallbackPrompt;
+    const outboundPrompt = messageText;
 
     if (!outboundPrompt || isSending || isTranscribing) {
       return;
     }
 
-    const messagePreview = attachmentsToSend.length
-      ? `${outboundPrompt}\n\nAttached: ${attachmentsToSend.map((item) => item.name).join(", ")}`
-      : outboundPrompt;
-
     const userMessage: CoachChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
-      content: messagePreview,
+      content: outboundPrompt,
       createdAt: new Date().toISOString(),
     };
 
     appendMessage(userMessage);
     setDraftMessage("");
-    setPendingAttachments([]);
     setIsSending(true);
     scrollToBottom();
 
@@ -730,15 +626,10 @@ export default function AICoachScreen() {
         conversationId,
         contextWindowDays: 7,
         includeAllHistory: true,
-        attachments: attachmentsToSend,
       });
 
       if (!conversationId) {
         setConversationId(response.conversationId);
-      }
-
-      if (Array.isArray(response.contextSignals)) {
-        setContextSignals(response.contextSignals.slice(0, 3));
       }
 
       const assistantMessageId = `assistant-${Date.now()}`;
@@ -765,11 +656,11 @@ export default function AICoachScreen() {
     } catch (error) {
       const message = getUnknownErrorMessage(
         error,
-        "Drona could not respond right now. Please try again.",
+        "Sarathi could not respond right now. Please try again.",
       );
 
       showAlert({
-        title: "Drona unavailable",
+        title: "Sarathi unavailable",
         message,
       });
     } finally {
@@ -777,201 +668,191 @@ export default function AICoachScreen() {
     }
   };
 
+  const renderComposer = (variant: "center" | "bottom") => (
+    <View style={[styles.composerWrap, variant === "center" ? styles.composerWrapCentered : null]}>
+      <View style={styles.inputRow}>
+        <Pressable
+          style={[styles.iconButton, isRecording ? styles.iconButtonActive : null]}
+          onPress={() => {
+            toggleRecording().catch(() => {
+              // handled in toggleRecording
+            });
+          }}
+          disabled={isSending || isTranscribing}
+        >
+          {isRecording ? (
+            <Square size={16} color={appTheme.colors.card} strokeWidth={2.2} />
+          ) : (
+            <Mic size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
+          )}
+        </Pressable>
+
+        <TextInput
+          value={draftMessage}
+          onChangeText={setDraftMessage}
+          style={styles.input}
+          placeholder="Message Sarathi"
+          placeholderTextColor={appTheme.colors.textMuted}
+          multiline
+          editable={!isSending && !isTranscribing}
+          maxLength={1800}
+        />
+
+        <Pressable
+          style={[styles.sendButton, !canSend ? styles.sendButtonDisabled : null]}
+          onPress={() => {
+            handleSend().catch(() => {
+              // handled in handleSend
+            });
+          }}
+          disabled={!canSend}
+        >
+          <SendHorizontal
+            size={18}
+            color={!canSend ? appTheme.colors.textMuted : appTheme.colors.card}
+            strokeWidth={2.2}
+          />
+        </Pressable>
+      </View>
+
+      {isRecording ? <Text style={styles.statusText}>Listening... tap stop to transcribe</Text> : null}
+      {isTranscribing ? <Text style={styles.statusText}>Transcribing voice note...</Text> : null}
+    </View>
+  );
+
   return (
     <SafeAreaView style={globalStyles.screen} edges={["top", "left", "right"]}>
-  <KeyboardAvoidingView
-    style={styles.screenContent}
-    behavior={Platform.OS === "ios" ? "padding" : "height"}
-    keyboardVerticalOffset={0}
-  >
+      <KeyboardAvoidingView
+        style={styles.screenContent}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
+      >
+        {!hasStartedChat ? (
+          <View style={styles.emptyState}>
+            <View style={styles.emptyHeroText}>
+              <Text style={styles.emptyTitle}>Hi, {greetingName}</Text>
+              <Text style={styles.emptySubtitle}>Where should we start today?</Text>
+              <Text style={styles.emptyHelper}>
+                Ask for a workout, nutrition help, recovery advice, or a quick push to stay consistent.
+              </Text>
+            </View>
 
-        <ScrollView
-          ref={chatScrollRef}
-          style={styles.chatScroll}
-          contentContainerStyle={styles.chatContent}
-          showsVerticalScrollIndicator={false}
-          onContentSizeChange={scrollToBottom}
-        >
-          {messages.map((message) => {
-            const isAssistant = message.role === "assistant";
-            const workoutPlan = isAssistant ? message.workoutPlan : undefined;
+            {renderComposer("center")}
+          </View>
+        ) : (
+          <>
+            <ScrollView
+              ref={chatScrollRef}
+              style={styles.chatScroll}
+              contentContainerStyle={styles.chatContent}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={scrollToBottom}
+            >
+              {messages.map((message) => {
+                const isAssistant = message.role === "assistant";
+                const workoutPlan = isAssistant ? message.workoutPlan : undefined;
 
-            if (workoutPlan) {
-              const isLoadingPlan = loadingWorkoutMessageId === message.id;
+                if (workoutPlan) {
+                  const isLoadingPlan = loadingWorkoutMessageId === message.id;
 
-              return (
-                <View key={message.id} style={[styles.messageRow, styles.assistantRow]}>
-                  <View style={styles.workoutCard}>
-                    <View style={styles.workoutCardHeader}>
-                      <Text style={styles.workoutCardEyebrow}>Drona workout</Text>
-                      <Text style={styles.workoutCardTitle}>{workoutPlan.title}</Text>
-                      {message.content ? (
-                        <Text style={styles.workoutCardSubtitle}>{message.content}</Text>
+                  return (
+                    <View key={message.id} style={[styles.messageRow, styles.assistantRow]}>
+                      <View style={styles.workoutCard}>
+                        <View style={styles.workoutCardHeader}>
+                          <Text style={styles.workoutCardEyebrow}>Sarathi workout</Text>
+                          <Text style={styles.workoutCardTitle}>{workoutPlan.title}</Text>
+                          {message.content ? (
+                            <Text style={styles.workoutCardSubtitle}>{message.content}</Text>
+                          ) : null}
+                        </View>
+
+                        <View style={styles.workoutExerciseList}>
+                          {workoutPlan.exercises.map((exercise, index) => {
+                            const isLast = index === workoutPlan.exercises.length - 1;
+                            return (
+                              <View
+                                key={`${exercise.name}-${String(index)}`}
+                                style={[
+                                  styles.workoutExerciseRow,
+                                  isLast ? { borderBottomWidth: 0, paddingBottom: 0 } : null,
+                                ]}
+                              >
+                                <Text style={styles.workoutExerciseName}>{exercise.name}</Text>
+                                <Text style={styles.workoutExerciseMeta}>
+                                  {exercise.sets} x {exercise.reps}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+
+                        <View style={styles.workoutCardFooter}>
+                          <AppButton
+                            title={isLoadingPlan ? "Loading..." : "Load Workout to Today"}
+                            onPress={() => {
+                              handleLoadWorkoutPlan(workoutPlan, message.id).catch(() => {
+                                // handled in handleLoadWorkoutPlan
+                              });
+                            }}
+                            loading={isLoadingPlan}
+                            disabled={isLoadingPlan}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  );
+                }
+
+                return (
+                  <View
+                    key={message.id}
+                    style={[styles.messageRow, isAssistant ? styles.assistantRow : styles.userRow]}
+                  >
+                    <View
+                      style={[
+                        styles.messageBubble,
+                        isAssistant ? styles.assistantBubble : styles.userBubble,
+                      ]}
+                    >
+                      <Text style={[styles.messageText, !isAssistant ? styles.userMessageText : null]}>
+                        {message.content}
+                      </Text>
+
+                      {isAssistant ? (
+                        <Pressable
+                          style={styles.speakMessageButton}
+                          onPress={() => {
+                            speakMessage(message.content, message.id);
+                          }}
+                        >
+                          {speakingMessageId === message.id ? (
+                            <VolumeX size={14} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
+                          ) : (
+                            <Volume2 size={14} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
+                          )}
+                          <Text style={styles.speakMessageButtonText}>
+                            {speakingMessageId === message.id ? "Stop" : "Speak"}
+                          </Text>
+                        </Pressable>
                       ) : null}
                     </View>
+                  </View>
+                );
+              })}
 
-                    <View style={styles.workoutExerciseList}>
-                      {workoutPlan.exercises.map((exercise, index) => {
-                        const isLast = index === workoutPlan.exercises.length - 1;
-                        return (
-                          <View
-                            key={`${exercise.name}-${String(index)}`}
-                            style={[
-                              styles.workoutExerciseRow,
-                              isLast ? { borderBottomWidth: 0, paddingBottom: 0 } : null,
-                            ]}
-                          >
-                            <Text style={styles.workoutExerciseName}>{exercise.name}</Text>
-                            <Text style={styles.workoutExerciseMeta}>
-                              {exercise.sets} x {exercise.reps}
-                            </Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-
-                    <View style={styles.workoutCardFooter}>
-                      <AppButton
-                        title={isLoadingPlan ? "Loading..." : "Load Workout to Today"}
-                        onPress={() => {
-                          handleLoadWorkoutPlan(workoutPlan, message.id).catch(() => {
-                            // handled in handleLoadWorkoutPlan
-                          });
-                        }}
-                        loading={isLoadingPlan}
-                        disabled={isLoadingPlan}
-                      />
-                    </View>
+              {isSending ? (
+                <View style={[styles.messageRow, styles.assistantRow]}>
+                  <View style={[styles.messageBubble, styles.assistantBubble, styles.thinkingBubble]}>
+                    <ActivityIndicator size="small" color={appTheme.colors.primary} />
+                    <Text style={styles.thinkingText}>Sarathi is thinking...</Text>
                   </View>
                 </View>
-              );
-            }
-
-            return (
-              <View
-                key={message.id}
-                style={[styles.messageRow, isAssistant ? styles.assistantRow : styles.userRow]}
-              >
-                <View
-                  style={[
-                    styles.messageBubble,
-                    isAssistant ? styles.assistantBubble : styles.userBubble,
-                  ]}
-                >
-                  <Text style={[styles.messageText, !isAssistant ? styles.userMessageText : null]}>
-                    {message.content}
-                  </Text>
-
-                  {isAssistant ? (
-                    <Pressable
-                      style={styles.speakMessageButton}
-                      onPress={() => {
-                        speakMessage(message.content, message.id);
-                      }}
-                    >
-                      {speakingMessageId === message.id ? (
-                        <VolumeX size={14} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
-                      ) : (
-                        <Volume2 size={14} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
-                      )}
-                      <Text style={styles.speakMessageButtonText}>
-                        {speakingMessageId === message.id ? "Stop" : "Speak"}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-              </View>
-            );
-          })}
-
-          {isSending ? (
-            <View style={[styles.messageRow, styles.assistantRow]}>
-              <View style={[styles.messageBubble, styles.assistantBubble, styles.thinkingBubble]}>
-                <ActivityIndicator size="small" color={appTheme.colors.primary} />
-                <Text style={styles.thinkingText}>Drona is thinking...</Text>
-              </View>
-            </View>
-          ) : null}
-        </ScrollView>
-
-        <View style={styles.composerWrap}>
-          {pendingAttachments.length ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.attachmentRow}>
-              {pendingAttachments.map((attachment) => (
-                <View key={attachment.id} style={styles.attachmentChip}>
-                  <Text style={styles.attachmentText}>{toAttachmentPreviewLabel(attachment)}</Text>
-                  <Pressable onPress={() => removeAttachment(attachment.id)}>
-                    <X size={14} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
-                  </Pressable>
-                </View>
-              ))}
+              ) : null}
             </ScrollView>
-          ) : null}
 
-          <View style={styles.inputRow}>
-            <Pressable
-              style={styles.iconButton}
-              onPress={() => {
-                handlePickFiles().catch(() => {
-                  // handled in handlePickFiles
-                });
-              }}
-              disabled={isPickingFile || isSending}
-            >
-              {isPickingFile ? (
-                <ActivityIndicator size="small" color={appTheme.colors.primary} />
-              ) : (
-                <Paperclip size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
-              )}
-            </Pressable>
-
-            <Pressable
-              style={[styles.iconButton, isRecording ? styles.iconButtonActive : null]}
-              onPress={() => {
-                toggleRecording().catch(() => {
-                  // handled in toggleRecording
-                });
-              }}
-              disabled={isSending || isTranscribing}
-            >
-              {isRecording ? (
-                <Square size={16} color={appTheme.colors.card} strokeWidth={2.2} />
-              ) : (
-                <Mic size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
-              )}
-            </Pressable>
-
-            <TextInput
-              value={draftMessage}
-              onChangeText={setDraftMessage}
-              style={styles.input}
-              placeholder="Message Drona"
-              placeholderTextColor={appTheme.colors.textMuted}
-              multiline
-              editable={!isSending && !isTranscribing}
-              maxLength={1800}
-            />
-
-            <Pressable
-              style={[styles.sendButton, !canSend ? styles.sendButtonDisabled : null]}
-              onPress={() => {
-                handleSend().catch(() => {
-                  // handled in handleSend
-                });
-              }}
-              disabled={!canSend}
-            >
-              <SendHorizontal
-                size={18}
-                color={!canSend ? appTheme.colors.textMuted : appTheme.colors.card}
-                strokeWidth={2.2}
-              />
-            </Pressable>
-          </View>
-
-          {isRecording ? <Text style={styles.statusText}>Listening... tap stop to transcribe</Text> : null}
-          {isTranscribing ? <Text style={styles.statusText}>Transcribing voice note...</Text> : null}
-        </View>
+            {renderComposer("bottom")}
+          </>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

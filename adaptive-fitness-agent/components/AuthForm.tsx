@@ -64,18 +64,18 @@ export default function AuthForm({
 
         <TouchableOpacity onPress={onSubmit} style={styles.primaryButton}>
           <Text style={styles.primaryButtonText}>
-            {isSignup ? "Sign Up" : "Login"}
+            {isSignup ? "Create account" : "Sign in"}
           </Text>
         </TouchableOpacity>
 
         <View style={styles.switchContainer}>
   <Text style={styles.switchText}>
-    {isSignup ? "Already Signed Up? " : "Don't have an account? "}
+    {isSignup ? "Already have an account? " : "Don't have an account? "}
   </Text>
 
   <TouchableOpacity onPress={onToggleMode}>
     <Text style={styles.switchButtonText}>
-      {isSignup ? "Login" : "Sign Up"}
+      {isSignup ? "Sign in" : "Create account"}
     </Text>
   </TouchableOpacity>
 </View>

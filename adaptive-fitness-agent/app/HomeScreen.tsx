@@ -331,7 +331,7 @@ export default function HomeScreen({
       setHomeInsightError(
         getUserFriendlyErrorMessage(
           error,
-          "Drona insights are unavailable right now.",
+          "Sarathi insights are unavailable right now.",
         ),
       );
     } finally {
@@ -772,8 +772,8 @@ export default function HomeScreen({
               <View style={styles.insightTextWrap}>
                 <Text style={styles.insightTitle}>
                   {isLoadingHomeInsight
-                    ? "Drona is checking in"
-                    : homeInsight?.title || "Drona insight"}
+                    ? "Sarathi is checking in"
+                    : homeInsight?.title || "Sarathi insight"}
                 </Text>
                 <Text style={styles.insightSummary}>
                   {isLoadingHomeInsight
@@ -1093,7 +1093,7 @@ export default function HomeScreen({
             <View style={styles.sheetHeaderRow}>
               <View style={styles.sheetHeaderText}>
                 <Text style={styles.sheetTitle}>Sleep log</Text>
-                <Text style={styles.sheetSubtitle}>Track recovery so Drona can coach better.</Text>
+                <Text style={styles.sheetSubtitle}>Track recovery so Sarathi can coach better.</Text>
               </View>
               <Pressable
                 accessibilityRole="button"

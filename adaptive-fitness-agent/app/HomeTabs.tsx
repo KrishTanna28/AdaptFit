@@ -261,7 +261,7 @@ export default function HomeTabs({ user }: HomeTabsProps) {
         name="Coach"
         component={AICoachScreen}
         options={{
-          title: "Drona",
+          title: "Sarathi",
           tabBarIcon: ({ color }) => (
             <Lightbulb size={appTheme.sizes.tabIcon} color={color} strokeWidth={2.2} />
           ),

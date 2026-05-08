@@ -104,7 +104,7 @@ function requireBaseUrl() {
 async function getAuthToken() {
   const user = auth.currentUser;
   if (!user) {
-    throw new Error("You need to be signed in to use Drona.");
+    throw new Error("You need to be signed in to use Sarathi.");
   }
 
   return user.getIdToken();
@@ -297,7 +297,7 @@ export async function getHomeCoachInsight(input: {
     ...payload,
     insight: {
       title: safeTrim(rawInsight.title) || "Today's focus",
-      summary: safeTrim(rawInsight.summary) || "Log your meals, movement, water, and sleep so Drona can coach with better context.",
+      summary: safeTrim(rawInsight.summary) || "Log your meals, movement, water, and sleep so Sarathi can coach with better context.",
       focus: safeTrim(rawInsight.focus) || "Consistency",
       actions: Array.isArray(rawInsight.actions)
         ? rawInsight.actions.map(safeTrim).filter(Boolean).slice(0, 3)

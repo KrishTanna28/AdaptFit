@@ -1162,6 +1162,7 @@ export default function NutritionScreen() {
             <View style={styles.heroTopRow}>
               <View style={styles.heroTextWrap}>
                 <Text style={styles.title}>Nutrition</Text>
+                <Text style={styles.subtitle}>Daily Nutrition log</Text>
               </View>
             </View>
 

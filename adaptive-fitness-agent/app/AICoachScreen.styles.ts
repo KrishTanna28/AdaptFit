@@ -87,6 +87,33 @@ export const styles = StyleSheet.create({
     paddingVertical: appTheme.spacing.md,
     gap: appTheme.spacing.lg,
   },
+  emptyState: {
+    flex: 1,
+    justifyContent: "center",
+    gap: appTheme.spacing.xl,
+    paddingBottom: appTheme.spacing.xxl,
+  },
+  emptyHeroText: {
+    alignItems: "center",
+    gap: appTheme.spacing.sm,
+    paddingHorizontal: appTheme.spacing.md,
+  },
+  emptyTitle: {
+    ...appTheme.typography.headingLarge,
+    color: appTheme.colors.textPrimary,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  emptySubtitle: {
+    ...appTheme.typography.headingSmall,
+    color: appTheme.colors.textPrimary,
+    textAlign: "center",
+  },
+  emptyHelper: {
+    ...appTheme.typography.bodyLarge,
+    color: appTheme.colors.textSecondary,
+    textAlign: "center",
+  },
   messageRow: {
     width: "100%",
   },
@@ -203,25 +230,12 @@ export const styles = StyleSheet.create({
     marginBottom: 0,
     paddingBottom: appTheme.spacing.sm,
   },  
-  attachmentRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: appTheme.spacing.sm,
-    paddingHorizontal: appTheme.spacing.xs,
-  },
-  attachmentChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: appTheme.spacing.sm,
-    borderRadius: appTheme.radii.pill,
-    backgroundColor: appTheme.colors.background,
-    paddingHorizontal: appTheme.spacing.md,
-    paddingVertical: appTheme.spacing.sm,
-  },
-  attachmentText: {
-    ...appTheme.typography.bodySmall,
-    color: appTheme.colors.textPrimary,
-    maxWidth: 220,
+  composerWrapCentered: {
+    borderTopWidth: 0,
+    borderRadius: appTheme.radii.lg,
+    marginHorizontal: 0,
+    padding: appTheme.spacing.md,
+    ...appTheme.shadows.card,
   },
   inputRow: {
     flexDirection: "row",

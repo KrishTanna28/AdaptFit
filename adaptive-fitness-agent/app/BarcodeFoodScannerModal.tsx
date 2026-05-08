@@ -100,6 +100,7 @@ export default function BarcodeFoodScannerModal({
             ) : (
               <View style={styles.scannerFrame}>
                 <CameraView
+                  key={`barcode-scanner-${visible ? "open" : "closed"}-${permission?.granted ? "on" : "off"}`}
                   style={styles.scannerCamera}
                   active={visible}
                   facing="back"
@@ -109,18 +110,20 @@ export default function BarcodeFoodScannerModal({
                   barcodeScannerSettings={{
                     barcodeTypes: [...BARCODE_TYPES],
                   }}
-                  key={`barcode-scanner-${visible ? "open" : "closed"}-${permission?.granted ? "on" : "off"}`}
                   onMountError={(event) => {
                     setCameraError(event.message || "Camera could not start.");
                   }}
-                  onBarcodeScanned={isResolving ? undefined : handleBarcodeScanned}
+                  onBarcodeScanned={handleBarcodeScanned}
                 />
                 <View style={styles.scannerGuide} pointerEvents="none" />
               </View>
             )}
 
             <Text style={styles.hintText}>
-              {cameraError || (isResolving ? "Looking up barcode nutrition..." : "Scanned foods open as editable meal entries.")}
+              {cameraError ||
+                (isResolving
+                  ? "Looking up barcode nutrition..."
+                  : "Scanned foods open as editable meal entries.")}
             </Text>
           </View>
         </View>
