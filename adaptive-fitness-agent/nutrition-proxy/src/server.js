@@ -10,9 +10,12 @@ const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
 const USDA_API_KEY = (process.env.USDA_API_KEY ?? "").trim();
 const OFF_USER_AGENT = (process.env.OPENFOODFACTS_USER_AGENT ?? "AdaptiveFitnessAgent/1.0 (contact@example.com)").trim();
-const YOLO_FOOD_DETECTION_URL = (process.env.YOLO_FOOD_DETECTION_URL ?? "").trim();
-const YOLO_FOOD_DETECTION_API_KEY = (process.env.YOLO_FOOD_DETECTION_API_KEY ?? "").trim();
-const YOLO_MIN_CONFIDENCE = Math.max(0, Math.min(toNumber(process.env.YOLO_MIN_CONFIDENCE, 0.2), 1));
+const GOOGLE_VISION_API_KEY = (process.env.GOOGLE_VISION_API_KEY ?? "").trim();
+const GOOGLE_VISION_MIN_CONFIDENCE = Math.max(
+  0,
+  Math.min(toNumber(process.env.GOOGLE_VISION_MIN_CONFIDENCE, 0.6), 1),
+);
+const GOOGLE_VISION_MAX_RESULTS = toPositiveInt(process.env.GOOGLE_VISION_MAX_RESULTS, 12);
 
 app.use(express.json({ limit: "15mb" }));
 
@@ -227,102 +230,40 @@ function pickUsdaNutrient(foodNutrients, nutrientNumber, nameHint) {
   return 0;
 }
 
-function pickDetectionArray(raw) {
-  if (Array.isArray(raw)) return raw;
-  if (!raw || typeof raw !== "object") return [];
+function getVisionBoundingArea(boundingPoly) {
+  if (!boundingPoly || typeof boundingPoly !== "object") return 0;
 
-  if (Array.isArray(raw.detections)) return raw.detections;
-  if (Array.isArray(raw.items)) return raw.items;
-  if (Array.isArray(raw.results)) return raw.results;
-  if (Array.isArray(raw.predictions)) return raw.predictions;
+  const vertices = Array.isArray(boundingPoly.normalizedVertices)
+    ? boundingPoly.normalizedVertices
+    : Array.isArray(boundingPoly.vertices)
+      ? boundingPoly.vertices
+      : [];
 
-  if (Array.isArray(raw.data?.detections)) return raw.data.detections;
-  if (Array.isArray(raw.data?.items)) return raw.data.items;
-  if (Array.isArray(raw.data?.results)) return raw.data.results;
-  if (Array.isArray(raw.data?.predictions)) return raw.data.predictions;
+  if (!vertices.length) return 0;
 
-  return [];
+  const xs = vertices.map((vertex) => toNumber(vertex?.x, 0));
+  const ys = vertices.map((vertex) => toNumber(vertex?.y, 0));
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const width = Math.max(0, maxX - minX);
+  const height = Math.max(0, maxY - minY);
+  return width * height;
 }
 
-function getDetectionLabel(raw) {
-  return String(
-    raw?.label ??
-    raw?.className ??
-    raw?.class_name ??
-    raw?.class ??
-    raw?.name ??
-    "",
-  ).trim();
-}
-
-function bboxAreaFromArray(bbox, format = "") {
-  if (!Array.isArray(bbox) || bbox.length < 4) return 0;
-
-  const a = toNumber(bbox[0], 0);
-  const b = toNumber(bbox[1], 0);
-  const c = toNumber(bbox[2], 0);
-  const d = toNumber(bbox[3], 0);
-  const normalizedFormat = String(format).trim().toLowerCase();
-
-  if (normalizedFormat.includes("xywh")) {
-    return Math.max(0, c) * Math.max(0, d);
-  }
-
-  if (normalizedFormat.includes("xyxy")) {
-    return Math.max(0, c - a) * Math.max(0, d - b);
-  }
-
-  if (c > a && d > b) {
-    return Math.max(0, c - a) * Math.max(0, d - b);
-  }
-
-  return Math.max(0, c) * Math.max(0, d);
-}
-
-function bboxAreaFromObject(bbox) {
-  if (!bbox || typeof bbox !== "object") return 0;
-
-  const width = toNumber(bbox.width ?? bbox.w, 0);
-  const height = toNumber(bbox.height ?? bbox.h, 0);
-  if (width > 0 && height > 0) {
-    return width * height;
-  }
-
-  const x1 = toNumber(bbox.x1 ?? bbox.left, 0);
-  const y1 = toNumber(bbox.y1 ?? bbox.top, 0);
-  const x2 = toNumber(bbox.x2 ?? bbox.right, 0);
-  const y2 = toNumber(bbox.y2 ?? bbox.bottom, 0);
-
-  if (x2 > x1 && y2 > y1) {
-    return Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-  }
-
-  return 0;
-}
-
-function getDetectionArea(raw) {
-  const directArea = toNumber(raw?.pixelArea ?? raw?.maskArea ?? raw?.area, 0);
-  if (directArea > 0) return directArea;
-
-  const bbox = raw?.bbox ?? raw?.box ?? raw?.boundingBox ?? raw?.bounding_box;
-  const bboxFormat = raw?.bboxFormat ?? raw?.boxFormat ?? raw?.bbox_format ?? raw?.box_format;
-  if (Array.isArray(bbox)) return bboxAreaFromArray(bbox, bboxFormat);
-  return bboxAreaFromObject(bbox);
-}
-
-function normalizeDetections(rawPayload) {
-  const rawDetections = pickDetectionArray(rawPayload);
+function normalizeVisionObjects(objects) {
   const byLabel = new Map();
 
-  for (const raw of rawDetections) {
-    const label = getDetectionLabel(raw);
+  for (const raw of objects) {
+    const label = String(raw?.name ?? "").trim();
     const normalizedLabel = normalizeFoodLabel(label);
     if (!normalizedLabel) continue;
 
-    const confidence = toNumber(raw?.confidence ?? raw?.score ?? raw?.probability, 1);
-    if (confidence < YOLO_MIN_CONFIDENCE) continue;
+    const confidence = toNumber(raw?.score ?? raw?.confidence, 1);
+    if (confidence < GOOGLE_VISION_MIN_CONFIDENCE) continue;
 
-    const pixelArea = getDetectionArea(raw);
+    const pixelArea = getVisionBoundingArea(raw?.boundingPoly);
     if (pixelArea <= 0) continue;
 
     const existing = byLabel.get(normalizedLabel);
@@ -344,37 +285,99 @@ function normalizeDetections(rawPayload) {
   return Array.from(byLabel.values());
 }
 
-async function runYoloFoodDetection(input) {
-  if (!YOLO_FOOD_DETECTION_URL) {
-    const error = new Error("Plate image detection is not configured. Set YOLO_FOOD_DETECTION_URL in nutrition-proxy/.env.");
+function normalizeVisionLabels(labels) {
+  const byLabel = new Map();
+
+  for (const raw of labels) {
+    const label = String(raw?.description ?? raw?.name ?? "").trim();
+    const normalizedLabel = normalizeFoodLabel(label);
+    if (!normalizedLabel) continue;
+
+    const confidence = toNumber(raw?.score ?? raw?.confidence, 1);
+    if (confidence < GOOGLE_VISION_MIN_CONFIDENCE) continue;
+
+    const existing = byLabel.get(normalizedLabel);
+    if (existing) {
+      existing.confidence = Math.max(existing.confidence, confidence);
+      continue;
+    }
+
+    byLabel.set(normalizedLabel, {
+      label,
+      normalizedLabel,
+      nutritionQuery: normalizeDetectedNutritionQuery(label),
+      confidence,
+      pixelArea: 1,
+    });
+  }
+
+  return Array.from(byLabel.values());
+}
+
+function normalizeVisionDetections(rawPayload) {
+  const responseEntry = rawPayload?.responses?.[0] ?? {};
+  const objects = Array.isArray(responseEntry.localizedObjectAnnotations)
+    ? responseEntry.localizedObjectAnnotations
+    : [];
+
+  const objectDetections = objects.length > 0 ? normalizeVisionObjects(objects) : [];
+  if (objectDetections.length > 0) {
+    return objectDetections;
+  }
+
+  const labels = Array.isArray(responseEntry.labelAnnotations)
+    ? responseEntry.labelAnnotations
+    : [];
+  return normalizeVisionLabels(labels);
+}
+
+async function runGoogleVisionDetection(input) {
+  if (!GOOGLE_VISION_API_KEY) {
+    const error = new Error("Plate image detection is not configured. Set GOOGLE_VISION_API_KEY in nutrition-proxy/.env.");
     error.statusCode = 501;
     throw error;
   }
 
-  const headers = {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  };
-
-  if (YOLO_FOOD_DETECTION_API_KEY) {
-    headers.Authorization = `Bearer ${YOLO_FOOD_DETECTION_API_KEY}`;
-  }
-
-  const response = await fetch(YOLO_FOOD_DETECTION_URL, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      imageBase64: input.imageBase64,
-      mimeType: input.mimeType,
-    }),
-  });
+  const response = await fetch(
+    `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(GOOGLE_VISION_API_KEY)}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        requests: [
+          {
+            image: { content: input.imageBase64 },
+            features: [
+              { type: "OBJECT_LOCALIZATION", maxResults: GOOGLE_VISION_MAX_RESULTS },
+              { type: "LABEL_DETECTION", maxResults: GOOGLE_VISION_MAX_RESULTS },
+            ],
+          },
+        ],
+      }),
+    },
+  );
 
   if (!response.ok) {
-    throw new Error(`YOLO food detection failed (${response.status}).`);
+    let detail = "";
+    try {
+      const payload = await response.json();
+      detail = String(payload?.error?.message ?? "").trim();
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail || `Google Vision detection failed (${response.status}).`);
   }
 
   const payload = await response.json();
-  return normalizeDetections(payload);
+  const responseEntry = payload?.responses?.[0];
+  if (responseEntry?.error?.message) {
+    throw new Error(String(responseEntry.error.message));
+  }
+
+  return normalizeVisionDetections(payload);
 }
 
 function scaleFoodNutrients(food, grams) {
@@ -946,10 +949,10 @@ app.post("/api/foods/plate/analyze", async (req, res) => {
       return res.status(400).json({ message: "totalWeightGrams must be a positive number." });
     }
 
-    const detections = await runYoloFoodDetection({ imageBase64, mimeType });
+    const detections = await runGoogleVisionDetection({ imageBase64, mimeType });
     if (detections.length === 0) {
       return res.status(422).json({
-        message: `No food items were detected in this image by the YOLO model at confidence ${String(YOLO_MIN_CONFIDENCE)}.`,
+        message: `No food items were detected in this image by Google Vision at confidence ${String(GOOGLE_VISION_MIN_CONFIDENCE)}.`,
       });
     }
 
@@ -1023,8 +1026,8 @@ app.post("/api/foods/plate/analyze", async (req, res) => {
       items,
       totals,
       meta: {
-        detector: "yolo",
-        minConfidence: YOLO_MIN_CONFIDENCE,
+        detector: "google-vision",
+        minConfidence: GOOGLE_VISION_MIN_CONFIDENCE,
       },
     });
   } catch (error) {

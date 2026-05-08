@@ -38,6 +38,16 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
+function buildDateKeysBetween(rangeStart: Date, rangeEnd: Date) {
+  const keys: string[] = [];
+  const start = startOfDay(rangeStart);
+  const end = startOfDay(rangeEnd);
+  for (let cursor = start; cursor < end; cursor = addDays(cursor, 1)) {
+    keys.push(getTodayDateKey(cursor));
+  }
+  return keys;
+}
+
 function getWeekStart(date: Date) {
   const base = startOfDay(date);
   const day = base.getDay();
@@ -174,10 +184,25 @@ export async function loadStepsForRanges(
   const savedLogsByKey: Record<string, DailyStepLog> = {};
 
   if (options.uid) {
-    const savedLogs = await loadDailyStepLogs(
-      options.uid,
-      ranges.map((range) => range.key),
-    );
+    const dateKeys = new Set<string>();
+
+    ranges.forEach((range) => {
+      const rangeEnd = range.end > now ? now : range.end;
+      const fullRangeDays = Math.max(
+        1,
+        Math.round((range.end.getTime() - range.start.getTime()) / MS_PER_DAY),
+      );
+      const isDailyRange = fullRangeDays === 1;
+
+      if (isDailyRange) {
+        dateKeys.add(range.key);
+        return;
+      }
+
+      buildDateKeysBetween(range.start, rangeEnd).forEach((key) => dateKeys.add(key));
+    });
+
+    const savedLogs = await loadDailyStepLogs(options.uid, Array.from(dateKeys));
 
     savedLogs.forEach((log) => {
       if (log) {
@@ -223,6 +248,34 @@ export async function loadStepsForRanges(
           target: adjustedTarget,
           isGoalMet: false,
         };
+      }
+
+      if (options.uid && !isDailyRange) {
+        const dateKeys = buildDateKeysBetween(rangeStart, rangeEnd);
+        let stepsSum = 0;
+        let targetSum = 0;
+        let hasLog = false;
+
+        dateKeys.forEach((key) => {
+          const log = savedLogsByKey[key];
+          if (log) {
+            hasLog = true;
+            stepsSum += Math.max(0, Math.round(log.steps));
+          }
+          const goalValue = log && log.goal > 0 ? log.goal : dailyGoal;
+          targetSum += Math.max(0, Math.round(goalValue));
+        });
+
+        if (hasLog) {
+          const steps = Math.max(0, Math.round(stepsSum));
+          const target = Math.max(0, Math.round(targetSum));
+          return {
+            ...range,
+            steps,
+            target,
+            isGoalMet: steps >= target,
+          };
+        }
       }
 
       try {

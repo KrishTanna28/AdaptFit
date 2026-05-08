@@ -18,7 +18,7 @@ import {
 } from "firebase/auth/react-native";
 import { doc, getDoc } from "firebase/firestore";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
-import { Flame, Lightbulb, Droplets, Moon } from "lucide-react-native";
+import { Flame, Lightbulb, Droplets, Moon, X } from "lucide-react-native";
 import Svg, { Circle } from "react-native-svg";
 import { useFocusEffect } from "@react-navigation/native";
 import { loadDailyNutritionLog } from "../services/nutritionLog";
@@ -74,8 +74,8 @@ const MINI_CHART_HEIGHT = 90;
 const MINI_CHART_SPACING = 22;
 const MINI_CHART_PADDING = 12;
 const MINI_CHART_MIN_SPACING = 16;
-const MINI_CHART_MAX_SPACING = 32;
-const STEPS_RING_SIZE = 100;
+const MINI_CHART_MAX_SPACING = 45;
+const STEPS_RING_SIZE = 90;
 const STEPS_RING_STROKE = 10;
 const STEPS_RING_RADIUS = (STEPS_RING_SIZE - STEPS_RING_STROKE) / 2;
 const STEPS_RING_CIRCUMFERENCE = 2 * Math.PI * STEPS_RING_RADIUS;
@@ -282,8 +282,10 @@ export default function HomeScreen({
         ),
       );
 
+      const logsToCount = logs[0] ? logs : logs.slice(1);
+
       let streak = 0;
-      for (const log of logs) {
+      for (const log of logsToCount) {
         if (log && log.entries.length > 0) {
           streak += 1;
         } else {
@@ -394,38 +396,6 @@ export default function HomeScreen({
     return Math.min(MINI_CHART_MAX_SPACING, Math.max(MINI_CHART_MIN_SPACING, stretched));
   }, [stepTrendPoints.length, stepTrendWidth]);
   const stepTrendLabelWidth = Math.max(14, Math.round(stepTrendSpacing));
-
-  const insightText = useMemo(() => {
-    if (goalProgressPercent < 45) {
-      return `You're ${String(goalProgressPercent)}% to your step goal. A 10-minute walk will move the needle.`;
-    }
-
-    if (hydrationProgressPercent > 0 && hydrationProgressPercent < 70) {
-      return "Hydration is behind today. Add 250 ml to stay on track.";
-    }
-
-    if (typeof sleepHours === "number" && sleepHours > 0 && sleepHours < 6) {
-      return "Short sleep logged. Keep workouts lighter and prioritize recovery.";
-    }
-
-    const calorieBalance = caloriesIntake - totalCaloriesBurned;
-    if (caloriesIntake > 0 && totalCaloriesBurned > 0 && calorieBalance > 450) {
-      return "You're in a calorie surplus. A short workout can balance the day.";
-    }
-
-    if (workoutStreak >= 3) {
-      return `Nice ${String(workoutStreak)}-day workout streak. Keep the momentum going.`;
-    }
-
-    return "Keep logging meals, workouts, water, and sleep to unlock sharper coaching.";
-  }, [
-    caloriesIntake,
-    goalProgressPercent,
-    hydrationProgressPercent,
-    sleepHours,
-    totalCaloriesBurned,
-    workoutStreak,
-  ]);
 
   useEffect(() => {
     if (isHydrationModalVisible) {
@@ -741,10 +711,10 @@ export default function HomeScreen({
 
           <AppCard style={styles.metricsCard}>
             <View style={styles.summaryHeaderRow}>
-              <Text style={styles.metricsTitle}>Today summary</Text>
+              <Text style={styles.metricsTitle}>Today's summary</Text>
               <View style={styles.streakPill}>
                 <Flame size={14} color={appTheme.colors.primary} strokeWidth={2.2} />
-                <Text style={styles.streakText}>{String(workoutStreak)} day streak</Text>
+                <Text style={styles.streakText}>{String(workoutStreak)}</Text>
               </View>
             </View>
 
@@ -818,15 +788,15 @@ export default function HomeScreen({
             </Pressable>
           </View>
 
-          <Pressable
-            onPress={() => setIsStepsModalVisible(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Open steps trend chart"
-          >
+          
             <AppCard style={styles.trendCard}>
               <View style={styles.trendHeaderRow}>
                 <Text style={styles.trendTitle}>Steps trend</Text>
-                <Text style={styles.trendMeta}>View History</Text>
+                <Pressable
+            onPress={() => setIsStepsModalVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Open steps trend chart"
+          ><Text style={styles.trendMeta}>View History</Text></Pressable>
               </View>
 
               <View
@@ -889,15 +859,6 @@ export default function HomeScreen({
                 )}
               </View>
             </AppCard>
-          </Pressable>
-
-          <AppCard style={styles.suggestionCard}>
-            <View style={styles.suggestionLabelRow}>
-              <Lightbulb size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
-              <Text style={styles.suggestionLabel}>AI insight</Text>
-            </View>
-            <Text style={styles.suggestionText}>{insightText}</Text>
-          </AppCard>
 
           {shouldShowPasswordSetup ? (
             <AppCard style={styles.passwordCard}>
@@ -964,8 +925,23 @@ export default function HomeScreen({
 
           <View style={styles.sheetCard}>
             <View style={styles.sheetHeaderRow}>
-              <Text style={styles.sheetTitle}>Water intake</Text>
-              <Text style={styles.sheetSubtitle}>Goal adapts to workouts and weather.</Text>
+              <View style={styles.sheetHeaderText}>
+                <Text style={styles.sheetTitle}>Water intake</Text>
+                <Text style={styles.sheetSubtitle}>Goal adapts to workouts and weather.</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close water log"
+                onPress={() => {
+                  if (!isSavingHydration) {
+                    setIsHydrationModalVisible(false);
+                  }
+                }}
+                disabled={isSavingHydration}
+                style={styles.sheetCloseButton}
+              >
+                <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
+              </Pressable>
             </View>
 
             <View style={styles.sheetMetricsGrid}>
@@ -1047,8 +1023,23 @@ export default function HomeScreen({
 
           <View style={styles.sheetCard}>
             <View style={styles.sheetHeaderRow}>
-              <Text style={styles.sheetTitle}>Sleep log</Text>
-              <Text style={styles.sheetSubtitle}>Track recovery for smarter coaching.</Text>
+              <View style={styles.sheetHeaderText}>
+                <Text style={styles.sheetTitle}>Sleep log</Text>
+                <Text style={styles.sheetSubtitle}>Track recovery so Drona can coach better.</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close sleep log"
+                onPress={() => {
+                  if (!isSavingSleep) {
+                    setIsSleepModalVisible(false);
+                  }
+                }}
+                disabled={isSavingSleep}
+                style={styles.sheetCloseButton}
+              >
+                <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
+              </Pressable>
             </View>
 
             <AppTextField

@@ -138,7 +138,7 @@ export default function LoginScreen() {
 
           <View style={styles.tagRow}>
             <View style={[styles.tag, styles.primaryTag]}>
-              <Text style={styles.primaryTagText}>Smart coaching</Text>
+              <Text style={styles.primaryTagText}>Drona coaching</Text>
             </View>
             <View style={styles.tag}>
               <Text style={styles.tagText}>Gentle progress</Text>

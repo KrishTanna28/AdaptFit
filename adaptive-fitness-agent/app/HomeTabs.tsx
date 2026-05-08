@@ -20,7 +20,7 @@ export type HomeTabParamList = {
   Home: undefined;
   Activity: undefined;
   Workout: undefined;
-  Diet: undefined;
+  Nutrition: undefined;
   Coach: undefined;
   Profile: undefined;
 };
@@ -248,7 +248,7 @@ export default function HomeTabs({ user }: HomeTabsProps) {
       />
 
       <Tab.Screen
-        name="Diet"
+        name="Nutrition"
         component={NutritionScreen}
         options={{
           tabBarIcon: ({ color }) => (
@@ -261,7 +261,7 @@ export default function HomeTabs({ user }: HomeTabsProps) {
         name="Coach"
         component={AICoachScreen}
         options={{
-          title: "AI Coach",
+          title: "Drona",
           tabBarIcon: ({ color }) => (
             <Lightbulb size={appTheme.sizes.tabIcon} color={color} strokeWidth={2.2} />
           ),

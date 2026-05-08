@@ -66,7 +66,7 @@ const STARTER_MESSAGE: CoachChatMessage = {
   id: "starter",
   role: "assistant",
   content:
-    "I am your adaptive coach. Ask me anything about workouts, nutrition, recovery, or consistency and I will personalize it using your logged data.",
+    "I am Drona, your fitness coach. Ask me anything about workouts, nutrition, recovery, or consistency and I will personalize it using your logged data.",
   createdAt: new Date().toISOString(),
 };
 
@@ -765,11 +765,11 @@ export default function AICoachScreen() {
     } catch (error) {
       const message = getUnknownErrorMessage(
         error,
-        "The coach could not respond right now. Please try again.",
+        "Drona could not respond right now. Please try again.",
       );
 
       showAlert({
-        title: "Coach unavailable",
+        title: "Drona unavailable",
         message,
       });
     } finally {
@@ -786,8 +786,8 @@ export default function AICoachScreen() {
   >
         <View style={styles.headerRow}>
           <View style={styles.headerTextWrap}>
-            <Text style={styles.title}>AI Coach</Text>
-            <Text style={styles.subtitle}>Chat with your adaptive coach</Text>
+            <Text style={styles.title}>Drona</Text>
+            <Text style={styles.subtitle}>Chat with Drona</Text>
           </View>
         </View>
 
@@ -809,7 +809,7 @@ export default function AICoachScreen() {
                 <View key={message.id} style={[styles.messageRow, styles.assistantRow]}>
                   <View style={styles.workoutCard}>
                     <View style={styles.workoutCardHeader}>
-                      <Text style={styles.workoutCardEyebrow}>AI workout</Text>
+                      <Text style={styles.workoutCardEyebrow}>Drona workout</Text>
                       <Text style={styles.workoutCardTitle}>{workoutPlan.title}</Text>
                       {message.content ? (
                         <Text style={styles.workoutCardSubtitle}>{message.content}</Text>
@@ -894,7 +894,7 @@ export default function AICoachScreen() {
             <View style={[styles.messageRow, styles.assistantRow]}>
               <View style={[styles.messageBubble, styles.assistantBubble, styles.thinkingBubble]}>
                 <ActivityIndicator size="small" color={appTheme.colors.primary} />
-                <Text style={styles.thinkingText}>Coach is thinking...</Text>
+                <Text style={styles.thinkingText}>Drona is thinking...</Text>
               </View>
             </View>
           ) : null}
@@ -951,7 +951,7 @@ export default function AICoachScreen() {
               value={draftMessage}
               onChangeText={setDraftMessage}
               style={styles.input}
-              placeholder="Message your coach"
+              placeholder="Message Drona"
               placeholderTextColor={appTheme.colors.textMuted}
               multiline
               editable={!isSending && !isTranscribing}

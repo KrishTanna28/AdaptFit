@@ -86,7 +86,7 @@ function requireBaseUrl() {
 async function getAuthToken() {
   const user = auth.currentUser;
   if (!user) {
-    throw new Error("You need to be signed in to use the AI coach.");
+    throw new Error("You need to be signed in to use Drona.");
   }
 
   return user.getIdToken();

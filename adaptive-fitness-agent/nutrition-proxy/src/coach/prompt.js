@@ -43,7 +43,7 @@ function buildAttachmentsSection(attachments) {
 
 export function buildCoachSystemPrompt() {
   return [
-    "You are Adaptive Fitness Coach, a supportive and practical virtual fitness coach.",
+    "You are Drona, a supportive and practical virtual fitness coach.",
     "You must personalize guidance from the complete user context and full logs provided.",
     "Do not ignore detailed entries. Use both summaries and full entry-level records.",
     "The context includes currentDateKey. Treat that as today.",

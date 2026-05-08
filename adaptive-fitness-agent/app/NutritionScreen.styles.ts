@@ -72,26 +72,6 @@ export const styles = StyleSheet.create({
     ...appTheme.typography.bodySmall,
     color: appTheme.colors.textSecondary,
   },
-  macroProgressTrack: {
-    height: appTheme.sizes.progressThin,
-    borderRadius: appTheme.radii.pill,
-    backgroundColor: appTheme.colors.primaryLight,
-    overflow: "hidden",
-  },
-  macroProgressFill: {
-    height: "100%",
-    borderRadius: appTheme.radii.pill,
-    backgroundColor: appTheme.colors.primary,
-  },
-  macroProgressProtein: {
-    backgroundColor: appTheme.colors.macroProtein,
-  },
-  macroProgressCarbs: {
-    backgroundColor: appTheme.colors.macroCarbs,
-  },
-  macroProgressFat: {
-    backgroundColor: appTheme.colors.macroFat,
-  },
   mealHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -135,7 +115,7 @@ export const styles = StyleSheet.create({
     aspectRatio: 3 / 4,
     borderRadius: appTheme.radii.md,
     overflow: "hidden",
-    backgroundColor: appTheme.colors.cameraBackground,
+    backgroundColor: appTheme.colors.background,
   },
   scannerCamera: {
     ...StyleSheet.absoluteFillObject,
@@ -195,7 +175,7 @@ export const styles = StyleSheet.create({
   },
   scannerModalOverlay: {
     flex: 1,
-    backgroundColor: appTheme.colors.cameraBackground,
+    backgroundColor: appTheme.colors.overlay,
     justifyContent: "center",
     paddingHorizontal: appTheme.spacing.lg,
   },
@@ -210,7 +190,7 @@ export const styles = StyleSheet.create({
     ...appTheme.shadows.modal,
   },
   cameraModalCard: {
-    backgroundColor: appTheme.colors.cameraSurface,
+    backgroundColor: appTheme.colors.card,
   },
   modalContent: {
     padding: appTheme.spacing.xl,

@@ -39,7 +39,7 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSMotionUsageDescription": "This app uses motion data to count your steps in real time.",
-        "NSMicrophoneUsageDescription": "This app uses the microphone so you can dictate messages to your AI coach.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone so you can dictate messages to Drona.",
         "NSCameraUsageDescription": "This app uses the camera to analyze workout form and capture plate photos for food logging."
       },
       "supportsTablet": true,

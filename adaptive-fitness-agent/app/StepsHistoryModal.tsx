@@ -36,7 +36,7 @@ type StepBarPoint = {
 
 const CHUNK_SIZE: Record<Timeframe, number> = {
   days: 7,
-  weeks: 8,
+  weeks: 6,
   months: 6,
   years: 3,
 };
@@ -450,21 +450,28 @@ export default function StepsHistoryModal({
                   styles.chartLabelsRow,
                   {
                     width: chartWidth,
-                    paddingHorizontal: CHART_PADDING,
                     position: "relative",
                     minHeight: 18,
                   },
                 ]}
               >
                 {orderedPoints.map((point, index) => {
-                  const baseLeft = CHART_PADDING + index * pointSpacing - labelWidth / 2;
-                  const maxLeft = Math.max(0, chartWidth - labelWidth);
-                  const clampedLeft = Math.min(Math.max(baseLeft, 0), maxLeft);
+                  const center = CHART_PADDING + index * pointSpacing;
+                  const boxWidth = 80;
+                  const left = center - boxWidth / 2;
 
                   return (
                     <Text
                       key={`label-${point.key}`}
-                      style={[styles.chartLabel, { width: labelWidth, left: clampedLeft, position: "absolute" }]}
+                      style={[
+                        styles.chartLabel,
+                        {
+                          position: "absolute",
+                          left,
+                          width: boxWidth,
+                          textAlign: "center",
+                        },
+                      ]}
                       numberOfLines={1}
                     >
                       {point.label}

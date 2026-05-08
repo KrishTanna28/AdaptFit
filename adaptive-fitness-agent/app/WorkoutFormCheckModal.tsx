@@ -240,7 +240,7 @@ export default function WorkoutFormCheckModal({
           contentContainerStyle={styles.formInsightsContent}
           showsVerticalScrollIndicator
         >
-          <Text style={styles.sectionTitle}>Coach insights</Text>
+          <Text style={styles.sectionTitle}>Drona insights</Text>
           {insights.map((insight, index) => (
             <View key={String(index)} style={styles.formInsightRow}>
               <Text style={styles.formInsightIndex}>{String(index + 1)}</Text>

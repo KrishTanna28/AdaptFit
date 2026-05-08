@@ -53,13 +53,15 @@ export default function BarcodeFoodScannerModal({
       transparent
       animationType="fade"
       visible={visible}
+      hardwareAccelerated
+      statusBarTranslucent
       onRequestClose={() => {
         if (!isResolving) {
           onClose();
         }
       }}
     >
-      <View style={styles.scannerModalOverlay}>
+      <View style={styles.modalOverlay}>
         <Pressable
           style={styles.modalBackdrop}
           onPress={() => {
@@ -69,12 +71,12 @@ export default function BarcodeFoodScannerModal({
           }}
         />
 
-        <View style={[styles.modalCard, styles.cameraModalCard]}>
+        <View style={styles.modalCard}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeaderRow}>
               <View style={styles.modalTitleWrap}>
-                <Text style={[styles.modalTitle, styles.modalTitleOnDark]}>Scan barcode</Text>
-                <Text style={[styles.hintText, styles.hintTextOnDark]}>Point the camera at a packaged food barcode.</Text>
+                <Text style={styles.modalTitle}>Scan barcode</Text>
+                <Text style={styles.hintText}>Point the camera at a packaged food barcode.</Text>
               </View>
 
               <Pressable
@@ -82,15 +84,15 @@ export default function BarcodeFoodScannerModal({
                 accessibilityLabel="Close scanner"
                 disabled={isResolving}
                 onPress={onClose}
-                style={[styles.modalIconButton, styles.modalIconButtonOnDark]}
+                style={styles.modalIconButton}
               >
-                <X size={18} color={appTheme.colors.card} strokeWidth={2.2} />
+                <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
               </Pressable>
             </View>
 
             {!permission?.granted ? (
               <View style={styles.scannerPermissionBlock}>
-                <Text style={[styles.emptyText, styles.hintTextOnDark]}>Camera permission is needed for barcode scan.</Text>
+                <Text style={styles.emptyText}>Camera permission is needed for barcode scan.</Text>
                 <AppButton title="Allow Camera" onPress={() => void requestPermission()} />
               </View>
             ) : (
@@ -101,13 +103,14 @@ export default function BarcodeFoodScannerModal({
                   barcodeScannerSettings={{
                     barcodeTypes: [...BARCODE_TYPES],
                   }}
+                  key={`barcode-scanner-${visible ? "open" : "closed"}-${permission?.granted ? "on" : "off"}`}
                   onBarcodeScanned={isResolving ? undefined : handleBarcodeScanned}
                 />
                 <View style={styles.scannerGuide} pointerEvents="none" />
               </View>
             )}
 
-            <Text style={[styles.hintText, styles.hintTextOnDark]}>
+            <Text style={styles.hintText}>
               {isResolving ? "Looking up barcode nutrition..." : "Scanned foods open as editable meal entries."}
             </Text>
           </View>

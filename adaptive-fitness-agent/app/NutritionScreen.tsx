@@ -1157,7 +1157,7 @@ export default function NutritionScreen() {
           <AppCard style={styles.heroCard}>
             <View style={styles.heroTopRow}>
               <View style={styles.heroTextWrap}>
-                <Text style={styles.title}>Diet / Nutrition</Text>
+                <Text style={styles.title}>Nutrition</Text>
               </View>
             </View>
 
@@ -1190,33 +1190,21 @@ export default function NutritionScreen() {
               <View style={styles.macroItem}>
                 <Text style={styles.macroValue}>{Math.round(totals.calories)} kcal</Text>
                 <Text style={styles.macroLabel}>Calories</Text>
-                <View style={styles.macroProgressTrack}>
-                  <View style={[styles.macroProgressFill, { width: "100%" }]} />
-                </View>
               </View>
 
               <View style={styles.macroItem}>
                 <Text style={styles.macroValue}>{roundOne(totals.protein)} g</Text>
                 <Text style={styles.macroLabel}>Protein</Text>
-                <View style={styles.macroProgressTrack}>
-                  <View style={[styles.macroProgressFill, styles.macroProgressProtein, { width: "100%" }]} />
-                </View>
               </View>
 
               <View style={styles.macroItem}>
                 <Text style={styles.macroValue}>{roundOne(totals.carbs)} g</Text>
                 <Text style={styles.macroLabel}>Carbs</Text>
-                <View style={styles.macroProgressTrack}>
-                  <View style={[styles.macroProgressFill, styles.macroProgressCarbs, { width: "100%" }]} />
-                </View>
               </View>
 
               <View style={styles.macroItem}>
                 <Text style={styles.macroValue}>{roundOne(totals.fat)} g</Text>
                 <Text style={styles.macroLabel}>Fat</Text>
-                <View style={styles.macroProgressTrack}>
-                  <View style={[styles.macroProgressFill, styles.macroProgressFat, { width: "100%" }]} />
-                </View>
               </View>
 
               <View style={styles.macroItem}>

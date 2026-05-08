@@ -18,30 +18,30 @@ export const styles = StyleSheet.create({
     color: appTheme.colors.textPrimary,
   },
   stepsCard: {
-    alignSelf: "flex-start",
     width: "100%",
-    minHeight: 120,
     borderRadius: appTheme.radii.lg,
-    paddingHorizontal: appTheme.spacing.md,
-    paddingVertical: appTheme.spacing.sm,
+    paddingHorizontal: appTheme.spacing.lg,
+    paddingVertical: appTheme.spacing.lg,
+    alignItems: "center",
   },
   stepsRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: appTheme.spacing.md,
+    justifyContent: "center",
+    gap: 120,
   },
   stepsInfo: {
-    flex: 1,
-    gap: appTheme.spacing.sm,
+    alignItems: "center",
+    gap: appTheme.spacing.xs,
     justifyContent: "center",
   },
   stepsSkeletonWrap: {
+    alignItems: "center",
     gap: appTheme.spacing.xs,
   },
   stepsProgressWrap: {
-    width: 92,
-    height: 92,
+    width: 90,
+    height: 90,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -198,24 +198,6 @@ export const styles = StyleSheet.create({
     justifyContent: "flex-end",
     gap: appTheme.spacing.xs,
   },
-  suggestionCard: {
-    gap: appTheme.spacing.md,
-    borderLeftWidth: appTheme.spacing.xs,
-    borderLeftColor: appTheme.colors.primary,
-  },
-  suggestionLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: appTheme.spacing.sm,
-  },
-  suggestionLabel: {
-    ...appTheme.typography.headingSmall,
-    color: appTheme.colors.textPrimary,
-  },
-  suggestionText: {
-    ...appTheme.typography.bodyLarge,
-    color: appTheme.colors.textPrimary,
-  },
   lifestyleRow: {
     flexDirection: "row",
     gap: appTheme.spacing.sm,
@@ -369,7 +351,22 @@ export const styles = StyleSheet.create({
     ...appTheme.shadows.modal,
   },
   sheetHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: appTheme.spacing.md,
+  },
+  sheetHeaderText: {
+    flex: 1,
     gap: appTheme.spacing.xs,
+  },
+  sheetCloseButton: {
+    width: appTheme.sizes.iconButtonMd,
+    height: appTheme.sizes.iconButtonMd,
+    borderRadius: appTheme.radii.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: appTheme.colors.background,
   },
   sheetTitle: {
     ...appTheme.typography.headingSmall,
