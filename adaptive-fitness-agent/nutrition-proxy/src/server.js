@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import express from "express";
 import { createClient } from "redis";
 import { mountCoachRoutes } from "./coach/routes.js";
+import { generatePlateFoodVisionResponse } from "./coach/geminiClient.js";
 import { mountFormAnalysisRoutes } from "./formAnalysis/routes.js";
 
 dotenv.config();
@@ -57,6 +58,156 @@ function normalizeDetectedNutritionQuery(value) {
   }
 
   return normalized;
+}
+
+const NON_FOOD_DETECTION_LABELS = new Set([
+  "plate",
+  "bowl",
+  "dishware",
+  "tableware",
+  "serveware",
+  "spoon",
+  "fork",
+  "knife",
+  "cutlery",
+  "napkin",
+  "table",
+  "tray",
+  "cup",
+  "glass",
+  "hand",
+  "person",
+  "package",
+  "packaging",
+  "container",
+  "kitchen utensil",
+]);
+
+function isLikelyNonFoodDetection(value) {
+  const normalized = normalizeFoodLabel(value);
+  return NON_FOOD_DETECTION_LABELS.has(normalized);
+}
+
+function extractJsonText(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) {
+    return String(fenced[1] ?? "").trim();
+  }
+
+  const firstCurly = raw.indexOf("{");
+  const lastCurly = raw.lastIndexOf("}");
+  if (firstCurly !== -1 && lastCurly > firstCurly) {
+    return raw.slice(firstCurly, lastCurly + 1).trim();
+  }
+
+  return raw;
+}
+
+function clampRatio(value) {
+  const n = toNumber(value, 0);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(1, n);
+}
+
+function buildGeminiPlatePrompt(totalWeightGrams) {
+  const hasKnownWeight = Number.isFinite(totalWeightGrams) && totalWeightGrams > 0;
+
+  return [
+    "Analyze this image for food logging.",
+    "Return ONLY valid JSON with this shape:",
+    '{ "isFoodPlate": boolean, "items": [{ "name": string, "displayName": string, "estimatedWeightGrams": number, "portionRatio": number, "confidence": number }], "notes": string }',
+    "Rules:",
+    "Include only visible edible food or drink items. Exclude plates, bowls, cutlery, packaging, hands, tables, napkins, and non-food objects.",
+    "Use common searchable food names such as rice, dal, chicken curry, banana, roti, salad, yogurt.",
+    "If there are no clear foods, set isFoodPlate false and items to an empty array.",
+    "portionRatio is the item's share of edible food on the plate from 0 to 1.",
+    hasKnownWeight
+      ? `The user's total edible plate weight is ${String(totalWeightGrams)} grams. Make item grams add up close to that total.`
+      : "Estimate realistic edible grams from the image. Prefer conservative estimates when uncertain.",
+    "confidence must be 0 to 1. Do not include uncertain non-food guesses.",
+  ].join("\n");
+}
+
+function normalizeGeminiPlateAnalysis(text) {
+  const cleaned = extractJsonText(text);
+  if (!cleaned) {
+    return [];
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    return [];
+  }
+
+  if (!parsed?.isFoodPlate || !Array.isArray(parsed.items)) {
+    return [];
+  }
+
+  const items = parsed.items
+    .map((item) => {
+      const label = String(item?.name ?? item?.displayName ?? "").trim();
+      const displayName = String(item?.displayName ?? item?.name ?? "").trim();
+      const normalizedLabel = normalizeFoodLabel(label);
+      if (!normalizedLabel) return null;
+      if (isLikelyNonFoodDetection(normalizedLabel)) return null;
+
+      const confidence = toNumber(item?.confidence, 0.8);
+      if (confidence < GOOGLE_VISION_MIN_CONFIDENCE) return null;
+
+      const estimatedWeightGrams = Math.max(0, toNumber(item?.estimatedWeightGrams, 0));
+      const portionRatio = clampRatio(item?.portionRatio);
+
+      if (estimatedWeightGrams <= 0 && portionRatio <= 0) {
+        return null;
+      }
+
+      return {
+        label: displayName || label,
+        normalizedLabel,
+        nutritionQuery: normalizeDetectedNutritionQuery(label),
+        confidence,
+        estimatedWeightGrams,
+        portionRatio,
+        pixelArea: portionRatio > 0 ? portionRatio : Math.max(estimatedWeightGrams, 1),
+      };
+    })
+    .filter(Boolean);
+
+  const byLabel = new Map();
+  for (const item of items) {
+    const existing = byLabel.get(item.normalizedLabel);
+    if (!existing) {
+      byLabel.set(item.normalizedLabel, item);
+      continue;
+    }
+
+    existing.confidence = Math.max(existing.confidence, item.confidence);
+    existing.estimatedWeightGrams += item.estimatedWeightGrams;
+    existing.portionRatio += item.portionRatio;
+    existing.pixelArea += item.pixelArea;
+  }
+
+  return Array.from(byLabel.values());
+}
+
+async function runGeminiPlateFoodDetection(input) {
+  const response = await generatePlateFoodVisionResponse({
+    imageBase64: input.imageBase64,
+    mimeType: input.mimeType,
+    prompt: buildGeminiPlatePrompt(input.totalWeightGrams),
+  });
+
+  return {
+    model: response.model,
+    detections: normalizeGeminiPlateAnalysis(response.text),
+  };
 }
 
 const REDIS_URL = (process.env.REDIS_URL ?? "").trim();
@@ -259,6 +410,7 @@ function normalizeVisionObjects(objects) {
     const label = String(raw?.name ?? "").trim();
     const normalizedLabel = normalizeFoodLabel(label);
     if (!normalizedLabel) continue;
+    if (isLikelyNonFoodDetection(normalizedLabel)) continue;
 
     const confidence = toNumber(raw?.score ?? raw?.confidence, 1);
     if (confidence < GOOGLE_VISION_MIN_CONFIDENCE) continue;
@@ -292,6 +444,7 @@ function normalizeVisionLabels(labels) {
     const label = String(raw?.description ?? raw?.name ?? "").trim();
     const normalizedLabel = normalizeFoodLabel(label);
     if (!normalizedLabel) continue;
+    if (isLikelyNonFoodDetection(normalizedLabel)) continue;
 
     const confidence = toNumber(raw?.score ?? raw?.confidence, 1);
     if (confidence < GOOGLE_VISION_MIN_CONFIDENCE) continue;
@@ -945,14 +1098,39 @@ app.post("/api/foods/plate/analyze", async (req, res) => {
       return res.status(400).json({ message: "imageBase64 is required." });
     }
 
-    if (!Number.isFinite(totalWeightGrams) || totalWeightGrams <= 0) {
-      return res.status(400).json({ message: "totalWeightGrams must be a positive number." });
+    let detections = [];
+    let detectorMeta = { detector: "gemini-vision" };
+    let geminiError = null;
+
+    try {
+      const geminiResult = await runGeminiPlateFoodDetection({
+        imageBase64,
+        mimeType,
+        totalWeightGrams,
+      });
+      detections = geminiResult.detections;
+      detectorMeta = {
+        detector: "gemini-vision",
+        model: geminiResult.model,
+        minConfidence: GOOGLE_VISION_MIN_CONFIDENCE,
+      };
+    } catch (error) {
+      geminiError = error instanceof Error ? error.message : "Gemini vision failed.";
     }
 
-    const detections = await runGoogleVisionDetection({ imageBase64, mimeType });
+    if (detections.length === 0 && GOOGLE_VISION_API_KEY && totalWeightGrams > 0) {
+      detections = await runGoogleVisionDetection({ imageBase64, mimeType });
+      detectorMeta = {
+        detector: "google-vision",
+        minConfidence: GOOGLE_VISION_MIN_CONFIDENCE,
+        geminiFallbackReason: geminiError,
+      };
+    }
+
     if (detections.length === 0) {
       return res.status(422).json({
-        message: `No food items were detected in this image by Google Vision at confidence ${String(GOOGLE_VISION_MIN_CONFIDENCE)}.`,
+        message: "No clear food items were detected in this image.",
+        detail: geminiError || undefined,
       });
     }
 
@@ -977,19 +1155,33 @@ app.post("/api/foods/plate/analyze", async (req, res) => {
       });
     }
 
+    const totalEstimatedWeight = resolvedDetections.reduce(
+      (sum, item) => sum + Math.max(0, toNumber(item.detection.estimatedWeightGrams, 0)),
+      0,
+    );
     const totalPixelArea = resolvedDetections.reduce((sum, item) => sum + item.detection.pixelArea, 0);
-    if (totalPixelArea <= 0) {
+    if (totalPixelArea <= 0 && totalEstimatedWeight <= 0) {
       return res.status(422).json({
-        message: "Detected food items did not include usable pixel areas.",
+        message: "Detected food items did not include usable quantity estimates.",
       });
     }
 
     const items = await Promise.all(
       resolvedDetections.map(async ({ detection, matchedFood }) => {
+        const knownWeightScale =
+          totalWeightGrams > 0 && totalEstimatedWeight > 0
+            ? totalWeightGrams / totalEstimatedWeight
+            : 1;
         const areaRatio = detection.portionRatio > 0
           ? detection.portionRatio
-          : detection.pixelArea / totalPixelArea;
-        const estimatedWeightGrams = totalWeightGrams * areaRatio;
+          : totalPixelArea > 0
+            ? detection.pixelArea / totalPixelArea
+            : detection.estimatedWeightGrams / totalEstimatedWeight;
+        const estimatedWeightGrams = detection.estimatedWeightGrams > 0
+          ? detection.estimatedWeightGrams * knownWeightScale
+          : totalWeightGrams > 0
+            ? totalWeightGrams * areaRatio
+            : totalEstimatedWeight * areaRatio;
         const nutrients = scaleFoodNutrients(matchedFood, estimatedWeightGrams);
 
         return {
@@ -1021,14 +1213,15 @@ app.post("/api/foods/plate/analyze", async (req, res) => {
     const totals = items.reduce((acc, item) => addNutrients(acc, item), emptyTotals);
 
     return res.json({
-      totalWeightGrams: roundOne(totalWeightGrams),
+      totalWeightGrams: roundOne(
+        totalWeightGrams > 0
+          ? totalWeightGrams
+          : items.reduce((sum, item) => sum + item.estimatedWeightGrams, 0),
+      ),
       totalPixelArea: roundOne(totalPixelArea),
       items,
       totals,
-      meta: {
-        detector: "google-vision",
-        minConfidence: GOOGLE_VISION_MIN_CONFIDENCE,
-      },
+      meta: detectorMeta,
     });
   } catch (error) {
     const statusCode = Number(error?.statusCode);

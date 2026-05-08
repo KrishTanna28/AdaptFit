@@ -44,6 +44,24 @@ type CoachChatResponse = {
   attachmentsUsed?: number;
 };
 
+export type HomeCoachInsight = {
+  title: string;
+  summary: string;
+  focus: string;
+  actions: string[];
+};
+
+type HomeInsightsResponse = {
+  insight: HomeCoachInsight;
+  model?: string;
+  usage?: {
+    promptTokenCount: number;
+    candidatesTokenCount: number;
+    totalTokenCount: number;
+  } | null;
+  contextSignals?: string[];
+};
+
 export type CoachInputAttachment = {
   name: string;
   mimeType?: string;
@@ -243,6 +261,49 @@ export async function getCoachConversationMessages(input: {
   }
 
   return (await response.json()) as CoachMessagesResponse;
+}
+
+export async function getHomeCoachInsight(input: {
+  contextWindowDays?: number;
+} = {}): Promise<HomeInsightsResponse> {
+  const baseUrl = requireBaseUrl();
+  const idToken = await getAuthToken();
+  const params = new URLSearchParams();
+
+  if (
+    typeof input.contextWindowDays === "number" &&
+    Number.isFinite(input.contextWindowDays) &&
+    input.contextWindowDays > 0
+  ) {
+    params.set("contextWindowDays", String(Math.floor(input.contextWindowDays)));
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const response = await fetchCoachApi({
+    baseUrl,
+    path: `/api/coach/home-insights${suffix}`,
+    method: "GET",
+    idToken,
+  });
+
+  if (!response.ok) {
+    throw await parseApiError(response);
+  }
+
+  const payload = (await response.json()) as HomeInsightsResponse;
+  const rawInsight = payload.insight ?? {};
+
+  return {
+    ...payload,
+    insight: {
+      title: safeTrim(rawInsight.title) || "Today's focus",
+      summary: safeTrim(rawInsight.summary) || "Log your meals, movement, water, and sleep so Drona can coach with better context.",
+      focus: safeTrim(rawInsight.focus) || "Consistency",
+      actions: Array.isArray(rawInsight.actions)
+        ? rawInsight.actions.map(safeTrim).filter(Boolean).slice(0, 3)
+        : [],
+    },
+  };
 }
 
 export async function transcribeCoachAudio(input: {

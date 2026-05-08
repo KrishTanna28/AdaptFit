@@ -836,11 +836,15 @@ export default function NutritionScreen() {
   };
 
   const handleAnalyzePlate = async () => {
-    const totalWeightGrams = Number(plateDraft.totalWeightLabel);
-    if (!Number.isFinite(totalWeightGrams) || totalWeightGrams <= 0) {
+    const trimmedWeight = plateDraft.totalWeightLabel.trim();
+    const totalWeightGrams = trimmedWeight ? Number(trimmedWeight) : undefined;
+    if (
+      totalWeightGrams !== undefined &&
+      (!Number.isFinite(totalWeightGrams) || totalWeightGrams <= 0)
+    ) {
       showAlert({
-        title: "Add plate weight",
-        message: "Enter the total food weight in grams before analyzing.",
+        title: "Invalid plate weight",
+        message: "Enter a positive gram amount or leave it blank for AI estimation.",
       });
       return;
     }

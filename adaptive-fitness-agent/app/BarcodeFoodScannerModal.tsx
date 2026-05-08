@@ -28,10 +28,12 @@ export default function BarcodeFoodScannerModal({
 }: BarcodeFoodScannerModalProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [lastScannedValue, setLastScannedValue] = useState("");
+  const [cameraError, setCameraError] = useState("");
 
   useEffect(() => {
     if (visible) {
       setLastScannedValue("");
+      setCameraError("");
       if (!permission?.granted) {
         void requestPermission();
       }
@@ -99,11 +101,18 @@ export default function BarcodeFoodScannerModal({
               <View style={styles.scannerFrame}>
                 <CameraView
                   style={styles.scannerCamera}
+                  active={visible}
                   facing="back"
+                  mode="picture"
+                  autofocus="on"
+                  ratio="4:3"
                   barcodeScannerSettings={{
                     barcodeTypes: [...BARCODE_TYPES],
                   }}
                   key={`barcode-scanner-${visible ? "open" : "closed"}-${permission?.granted ? "on" : "off"}`}
+                  onMountError={(event) => {
+                    setCameraError(event.message || "Camera could not start.");
+                  }}
                   onBarcodeScanned={isResolving ? undefined : handleBarcodeScanned}
                 />
                 <View style={styles.scannerGuide} pointerEvents="none" />
@@ -111,7 +120,7 @@ export default function BarcodeFoodScannerModal({
             )}
 
             <Text style={styles.hintText}>
-              {isResolving ? "Looking up barcode nutrition..." : "Scanned foods open as editable meal entries."}
+              {cameraError || (isResolving ? "Looking up barcode nutrition..." : "Scanned foods open as editable meal entries.")}
             </Text>
           </View>
         </View>

@@ -124,6 +124,54 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "stretch",
   },
+  insightCard: {
+    gap: appTheme.spacing.md,
+  },
+  insightHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: appTheme.spacing.md,
+  },
+  insightIconBubble: {
+    width: appTheme.sizes.iconButtonMd,
+    height: appTheme.sizes.iconButtonMd,
+    borderRadius: appTheme.radii.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: appTheme.colors.primaryLight,
+  },
+  insightTextWrap: {
+    flex: 1,
+    minWidth: 0,
+    gap: appTheme.spacing.xs,
+  },
+  insightTitle: {
+    ...appTheme.typography.headingSmall,
+    color: appTheme.colors.textPrimary,
+  },
+  insightSummary: {
+    ...appTheme.typography.bodySmall,
+    color: appTheme.colors.textSecondary,
+  },
+  insightFocusPill: {
+    alignSelf: "flex-start",
+    borderRadius: appTheme.radii.pill,
+    backgroundColor: appTheme.colors.cardTinted,
+    paddingHorizontal: appTheme.spacing.md,
+    paddingVertical: appTheme.spacing.xs,
+  },
+  insightFocusText: {
+    ...appTheme.typography.bodySmall,
+    color: appTheme.colors.primary,
+    fontWeight: "700",
+  },
+  insightActionsList: {
+    gap: appTheme.spacing.xs,
+  },
+  insightActionText: {
+    ...appTheme.typography.bodySmall,
+    color: appTheme.colors.textPrimary,
+  },
   metricItem: {
     flex: 1,
     gap: appTheme.spacing.xs,

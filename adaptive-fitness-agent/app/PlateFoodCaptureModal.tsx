@@ -85,15 +85,15 @@ export default function PlateFoodCaptureModal({
             ) : null}
 
             <AppTextField
-              label="Total plate weight (g)"
-              placeholder="Example: 450"
+              label="Total plate weight (g, optional)"
+              placeholder="Optional: 450"
               value={totalWeightLabel}
               onChangeText={onChangeTotalWeight}
               keyboardType="decimal-pad"
             />
 
             <Text style={styles.hintText}>
-              The detected food area is used to split this total weight across the items.
+              Drona estimates food items and portions automatically. Add weight only if you measured it.
             </Text>
 
             <View style={styles.modalActions}>

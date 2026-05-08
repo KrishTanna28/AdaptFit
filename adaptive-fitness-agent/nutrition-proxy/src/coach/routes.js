@@ -3,7 +3,11 @@ import express from "express";
 import { ensureConversation, appendConversationMessage, listConversationMessages } from "./conversationStore.js";
 import { loadCoachContext } from "./context.js";
 import { getCoachFirestore, verifyCoachIdToken } from "./firebaseAdmin.js";
-import { generateCoachResponse, transcribeAudioWithVertex } from "./geminiClient.js";
+import {
+  generateCoachResponse,
+  generateHomeInsightsResponse,
+  transcribeAudioWithVertex,
+} from "./geminiClient.js";
 import { buildCoachSystemPrompt, buildCoachUserPrompt } from "./prompt.js";
 
 const MAX_MESSAGE_LENGTH = 4000;
@@ -150,6 +154,61 @@ function parseWorkoutPlan(text) {
   } catch {
     return null;
   }
+}
+
+function normalizeHomeInsights(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+
+  const title = toSafeMessage(raw.title).slice(0, 80);
+  const summary = toSafeMessage(raw.summary).slice(0, 180);
+  const focus = toSafeMessage(raw.focus).slice(0, 80);
+  const actionsRaw = Array.isArray(raw.actions) ? raw.actions : [];
+  const actions = actionsRaw
+    .map((item) => toSafeMessage(item).slice(0, 120))
+    .filter(Boolean)
+    .slice(0, 3);
+
+  if (!title || !summary) {
+    return null;
+  }
+
+  return {
+    title,
+    summary,
+    focus: focus || "Consistency",
+    actions,
+  };
+}
+
+function parseHomeInsights(text) {
+  const cleaned = extractJsonText(text);
+  if (!cleaned) {
+    return null;
+  }
+
+  try {
+    return normalizeHomeInsights(JSON.parse(cleaned));
+  } catch {
+    return null;
+  }
+}
+
+function buildHomeInsightsPrompt(context) {
+  return [
+    "Create a compact home-screen insight for this user.",
+    "Return ONLY this JSON shape:",
+    '{ "title": string, "summary": string, "focus": string, "actions": [string, string, string] }',
+    "Requirements:",
+    "Use currentDateKey as today.",
+    "Base the insight on logged steps, nutrition, workouts, hydration, sleep, and context signals.",
+    "Mention one thing the user could do better or one motivational next action.",
+    "Keep title under 8 words, summary under 28 words, each action under 14 words.",
+    "Do not invent data that is missing. If data is missing, suggest what to log next.",
+    "Context JSON:",
+    JSON.stringify(context, null, 2),
+  ].join("\n");
 }
 
 function buildWorkoutReply(workoutPlan) {
@@ -303,6 +362,46 @@ export function mountCoachRoutes(app) {
         contextWindow: context.window,
         attachmentsUsed: attachments.length,
         workoutPlan: workoutPlan ?? undefined,
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unknown error";
+      const statusCode = inferCoachErrorStatus(detail, 500);
+
+      return res.status(statusCode).json({
+        message: messageForCoachStatus(statusCode),
+        detail,
+      });
+    }
+  });
+
+  router.get("/home-insights", requireCoachUser, async (req, res) => {
+    try {
+      const db = getCoachFirestore();
+      const uid = req.coachUser.uid;
+      const windowDays = normalizeWindowDays(req.query?.contextWindowDays);
+      const context = await loadCoachContext(db, uid, {
+        windowDays,
+        includeAllHistory: true,
+      });
+
+      const insightResponse = await generateHomeInsightsResponse({
+        prompt: buildHomeInsightsPrompt(context),
+      });
+      const insight = parseHomeInsights(insightResponse.text);
+
+      if (!insight) {
+        return res.status(502).json({
+          message: "AI insight response could not be parsed.",
+          detail: insightResponse.text,
+        });
+      }
+
+      return res.json({
+        insight,
+        model: insightResponse.model,
+        usage: insightResponse.usage,
+        contextSignals: context.signals,
+        contextWindow: context.window,
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown error";

@@ -48,6 +48,7 @@ import AppButton from "../components/ui/AppButton";
 import AppCard from "../components/ui/AppCard";
 import AppSkeleton from "../components/ui/AppSkeleton";
 import AppTextField from "../components/ui/AppTextField";
+import { getHomeCoachInsight, type HomeCoachInsight } from "../services/aiCoach";
 import type { LiveStepCounter } from "../hooks/useLiveStepCounter";
 import { appTheme } from "../theme/designSystem";
 import { globalStyles } from "../theme/globalStyles";
@@ -233,6 +234,9 @@ export default function HomeScreen({
   const [sleepQualityInput, setSleepQualityInput] = useState<number | null>(null);
   const [isSavingHydration, setIsSavingHydration] = useState(false);
   const [isSavingSleep, setIsSavingSleep] = useState(false);
+  const [homeInsight, setHomeInsight] = useState<HomeCoachInsight | null>(null);
+  const [isLoadingHomeInsight, setIsLoadingHomeInsight] = useState(false);
+  const [homeInsightError, setHomeInsightError] = useState("");
 
   const loadHomeMetrics = useCallback(async () => {
     setIsLoadingCaloriesIntake(true);
@@ -316,6 +320,25 @@ export default function HomeScreen({
     }
   }, [liveStepCounter.goal, user.uid]);
 
+  const loadHomeInsight = useCallback(async () => {
+    setIsLoadingHomeInsight(true);
+    setHomeInsightError("");
+    try {
+      const response = await getHomeCoachInsight({ contextWindowDays: 7 });
+      setHomeInsight(response.insight);
+    } catch (error) {
+      setHomeInsight(null);
+      setHomeInsightError(
+        getUserFriendlyErrorMessage(
+          error,
+          "Drona insights are unavailable right now.",
+        ),
+      );
+    } finally {
+      setIsLoadingHomeInsight(false);
+    }
+  }, []);
+
   const totalCaloriesBurned = liveStepCounter.caloriesBurned + workoutCaloriesBurned;
 
   useFocusEffect(
@@ -330,7 +353,10 @@ export default function HomeScreen({
       loadStepHistory().catch(() => {
         setIsLoadingStepHistory(false);
       });
-    }, [loadHomeMetrics, loadStepHistory, loadWorkoutStreak])
+      loadHomeInsight().catch(() => {
+        setIsLoadingHomeInsight(false);
+      });
+    }, [loadHomeInsight, loadHomeMetrics, loadStepHistory, loadWorkoutStreak])
   );
 
   useEffect(() => {
@@ -736,6 +762,48 @@ export default function HomeScreen({
                 <Text style={styles.metricLabel}>Calories consumed</Text>
               </View>
             </View>
+          </AppCard>
+
+          <AppCard style={styles.insightCard}>
+            <View style={styles.insightHeaderRow}>
+              <View style={styles.insightIconBubble}>
+                <Lightbulb size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
+              </View>
+              <View style={styles.insightTextWrap}>
+                <Text style={styles.insightTitle}>
+                  {isLoadingHomeInsight
+                    ? "Drona is checking in"
+                    : homeInsight?.title || "Drona insight"}
+                </Text>
+                <Text style={styles.insightSummary}>
+                  {isLoadingHomeInsight
+                    ? "Reading your latest steps, meals, workouts, hydration, and recovery..."
+                    : homeInsight?.summary || homeInsightError || "Log today's activity to unlock a personalized insight."}
+                </Text>
+              </View>
+            </View>
+
+            {isLoadingHomeInsight ? (
+              <View style={styles.insightActionsList}>
+                <AppSkeleton width="100%" height={14} borderRadius={8} variant="home" />
+                <AppSkeleton width="82%" height={14} borderRadius={8} variant="home" />
+              </View>
+            ) : homeInsight ? (
+              <>
+                <View style={styles.insightFocusPill}>
+                  <Text style={styles.insightFocusText}>{homeInsight.focus}</Text>
+                </View>
+                {homeInsight.actions.length > 0 ? (
+                  <View style={styles.insightActionsList}>
+                    {homeInsight.actions.map((action, index) => (
+                      <Text key={`${action}-${String(index)}`} style={styles.insightActionText}>
+                        {String(index + 1)}. {action}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
+              </>
+            ) : null}
           </AppCard>
 
           <View style={styles.lifestyleRow}>

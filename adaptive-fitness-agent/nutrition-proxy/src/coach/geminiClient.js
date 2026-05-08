@@ -227,6 +227,81 @@ export async function generateFormAnalysisResponse(input) {
   };
 }
 
+export async function generateHomeInsightsResponse(input) {
+  const body = {
+    systemInstruction: {
+      role: "system",
+      parts: [
+        {
+          text: [
+            "You are Drona, a concise fitness and nutrition coach.",
+            "Return only valid JSON. Do not use markdown.",
+            "Use the provided app context as the source of truth.",
+            "Avoid medical claims and extreme advice.",
+          ].join("\n"),
+        },
+      ],
+    },
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: input.prompt }],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.35,
+      topP: 0.9,
+    },
+  };
+
+  const { model, payload } = await requestVertexContent(body);
+
+  return {
+    model,
+    text: extractTextResponse(payload),
+    usage: extractUsage(payload),
+  };
+}
+
+export async function generatePlateFoodVisionResponse(input) {
+  const normalizedImage = normalizeBase64(input.imageBase64);
+  if (!normalizedImage) {
+    throw new Error("image-base64-missing");
+  }
+
+  const mimeType = String(input.mimeType ?? "image/jpeg").trim() || "image/jpeg";
+  const prompt = String(input.prompt ?? "").trim();
+
+  const body = {
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType,
+              data: normalizedImage,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.05,
+      topP: 0.8,
+    },
+  };
+
+  const { model, payload } = await requestVertexContent(body);
+
+  return {
+    model,
+    text: extractTextResponse(payload),
+    usage: extractUsage(payload),
+  };
+}
+
 export async function transcribeAudioWithVertex(input) {
   const normalizedAudio = normalizeBase64(input.audioBase64);
   if (!normalizedAudio) {

@@ -81,7 +81,7 @@ export type PlateFoodAnalysisResult = {
 type PlateFoodAnalysisRequest = {
   imageBase64: string;
   mimeType?: string;
-  totalWeightGrams: number;
+  totalWeightGrams?: number;
 };
 
 type OpenFoodFactsProduct = {

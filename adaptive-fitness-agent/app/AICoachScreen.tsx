@@ -784,12 +784,6 @@ export default function AICoachScreen() {
     behavior={Platform.OS === "ios" ? "padding" : "height"}
     keyboardVerticalOffset={0}
   >
-        <View style={styles.headerRow}>
-          <View style={styles.headerTextWrap}>
-            <Text style={styles.title}>Drona</Text>
-            <Text style={styles.subtitle}>Chat with Drona</Text>
-          </View>
-        </View>
 
         <ScrollView
           ref={chatScrollRef}
