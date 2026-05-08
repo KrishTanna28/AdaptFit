@@ -1,7 +1,13 @@
 import express from "express";
 import { createHash } from "node:crypto";
 
-import { ensureConversation, appendConversationMessage, listConversationMessages } from "./conversationStore.js";
+import {
+  ensureConversation,
+  appendConversationMessage,
+  listConversationMessages,
+  listConversations,
+  listRecentConversationContext,
+} from "./conversationStore.js";
 import { loadCoachContext } from "./context.js";
 import { getCoachFirestore, verifyCoachIdToken } from "./firebaseAdmin.js";
 import {
@@ -207,6 +213,7 @@ function buildHomeInsightsPrompt(context) {
     "Requirements:",
     "Use currentDateKey as today.",
     "Base the insight on logged steps, nutrition, workouts, hydration, sleep, and context signals.",
+    "Use previousCoachChats as conversational memory when it helps, but do not let old chat override fresh logs.",
     "Mention one thing the user could do better or one motivational next action.",
     "Keep title under 8 words, summary under 28 words, each action under 14 words.",
     "Do not invent data that is missing. If data is missing, suggest what to log next.",
@@ -247,6 +254,7 @@ function buildHomeInsightSignature(context) {
     },
     signals: context.signals,
     window: context.window,
+    previousCoachChats: context.previousCoachChats,
   };
 
   return createHash("sha256")
@@ -362,10 +370,15 @@ export function mountCoachRoutes(app) {
       const conversationId = await ensureConversation(db, uid, req.body?.conversationId);
       const history = await listConversationMessages(db, uid, conversationId, 10);
       const context = await loadCoachContext(db, uid, { windowDays, includeAllHistory });
+      const previousCoachChats = await listRecentConversationContext(db, uid, conversationId);
+      const contextWithChatHistory = {
+        ...context,
+        previousCoachChats,
+      };
 
       const systemPrompt = buildCoachSystemPrompt();
       const userPrompt = buildCoachUserPrompt({
-        context,
+        context: contextWithChatHistory,
         message,
         attachments,
       });
@@ -378,7 +391,7 @@ export function mountCoachRoutes(app) {
 
       let workoutPlan = parseWorkoutPlan(coachResponse.text);
       let replyText = workoutPlan ? buildWorkoutReply(workoutPlan) : coachResponse.text;
-      const workoutGoalAchievedToday = Boolean(context?.recency?.workoutGoalAchievedToday);
+      const workoutGoalAchievedToday = Boolean(contextWithChatHistory?.recency?.workoutGoalAchievedToday);
 
       if (workoutPlan && workoutGoalAchievedToday) {
         workoutPlan = null;
@@ -402,8 +415,8 @@ export function mountCoachRoutes(app) {
         reply: replyText,
         model: coachResponse.model,
         usage: coachResponse.usage,
-        contextSignals: context.signals,
-        contextWindow: context.window,
+        contextSignals: contextWithChatHistory.signals,
+        contextWindow: contextWithChatHistory.window,
         attachmentsUsed: attachments.length,
         workoutPlan: workoutPlan ?? undefined,
       });
@@ -423,10 +436,15 @@ export function mountCoachRoutes(app) {
       const db = getCoachFirestore();
       const uid = req.coachUser.uid;
       const windowDays = normalizeWindowDays(req.query?.contextWindowDays);
-      const context = await loadCoachContext(db, uid, {
+      const baseContext = await loadCoachContext(db, uid, {
         windowDays,
         includeAllHistory: true,
       });
+      const previousCoachChats = await listRecentConversationContext(db, uid, "");
+      const context = {
+        ...baseContext,
+        previousCoachChats,
+      };
       const signature = buildHomeInsightSignature(context);
       const cacheKey = buildCacheKey(
         [HOME_INSIGHT_CACHE_VERSION, "home-insight", uid, String(windowDays), signature],
@@ -512,6 +530,22 @@ export function mountCoachRoutes(app) {
       return res.status(statusCode).json({
         message: statusCode === 413 ? "Transcription failed." : messageForCoachStatus(statusCode),
         detail,
+      });
+    }
+  });
+
+  router.get("/conversations", requireCoachUser, async (req, res) => {
+    try {
+      const db = getCoachFirestore();
+      const conversations = await listConversations(db, req.coachUser.uid, req.query.limit);
+
+      return res.json({
+        conversations,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Failed to load conversations.",
+        detail: error instanceof Error ? error.message : "Unknown error",
       });
     }
   });

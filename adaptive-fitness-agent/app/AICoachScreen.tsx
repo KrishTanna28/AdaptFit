@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -16,11 +18,14 @@ import * as FileSystem from "expo-file-system/legacy";
 import { Audio } from "expo-av";
 import * as Speech from "expo-speech";
 import {
+  Menu,
   Mic,
+  Plus,
   SendHorizontal,
   Square,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react-native";
 import { doc, getDoc } from "firebase/firestore";
 import { useFocusEffect } from "@react-navigation/native";
@@ -28,9 +33,12 @@ import AppButton from "../components/ui/AppButton";
 import { getUserFriendlyErrorMessage, useAppAlert } from "../components/ui/AppAlert";
 import { useAuthUser } from "../hooks/useAuthUser";
 import {
+  getCoachConversationMessages,
+  getCoachConversations,
   sendCoachMessage,
   transcribeCoachAudio,
   type CoachChatMessage,
+  type CoachConversationSummary,
   type CoachWorkoutPlan,
 } from "../services/aiCoach";
 import { db } from "../services/firebase";
@@ -58,6 +66,7 @@ import { styles } from "./AICoachScreen.styles";
 // ];
 
 const MAX_WORKOUT_EXERCISES = 16;
+const SIDEBAR_WIDTH = 312;
 const WORKOUT_DEFAULTS = {
   secPerRep: 4,
   restBetweenSetsSec: 75,
@@ -251,19 +260,41 @@ function getDisplayName(user: { displayName?: string | null; email?: string | nu
   return emailName || "there";
 }
 
+function formatConversationDate(value: string | null | undefined) {
+  if (!value) {
+    return "Recent";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Recent";
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export default function AICoachScreen() {
   const { showAlert } = useAppAlert();
   const { user } = useAuthUser();
   const navigation = useNavigation<BottomTabNavigationProp<HomeTabParamList>>();
   const chatScrollRef = useRef<ScrollView | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const sidebarTranslateX = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
 
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  const [conversations, setConversations] = useState<CoachConversationSummary[]>([]);
   const [messages, setMessages] = useState<CoachChatMessage[]>([]);
   const [draftMessage, setDraftMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isSidebarVisible, setIsSidebarVisible] = useState(false);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
+  const [conversationListError, setConversationListError] = useState("");
+  const [selectingConversationId, setSelectingConversationId] = useState<string | null>(null);
   const [isAutoSpeakEnabled, setIsAutoSpeakEnabled] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [loadingWorkoutMessageId, setLoadingWorkoutMessageId] = useState<string | null>(null);
@@ -286,6 +317,44 @@ export default function AICoachScreen() {
       Speech.stop();
     };
   }, []);
+
+  const loadConversations = useCallback(async (quiet = false) => {
+    if (!user?.uid) {
+      setConversations([]);
+      setConversationListError("");
+      return;
+    }
+
+    if (!quiet) {
+      setIsLoadingConversations(true);
+    }
+
+    setConversationListError("");
+
+    try {
+      const response = await getCoachConversations({ limit: 30 });
+      setConversations(response.conversations);
+    } catch (error) {
+      setConversationListError(
+        getUnknownErrorMessage(error, "Could not load saved Sarathi chats."),
+      );
+    } finally {
+      if (!quiet) {
+        setIsLoadingConversations(false);
+      }
+    }
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setConversationId(undefined);
+      setConversations([]);
+      setMessages([]);
+      return;
+    }
+
+    void loadConversations(true);
+  }, [loadConversations, user?.uid]);
 
   useEffect(() => {
     let mounted = true;
@@ -378,6 +447,66 @@ export default function AICoachScreen() {
     setTimeout(() => {
       chatScrollRef.current?.scrollToEnd({ animated: true });
     }, 50);
+  };
+
+  const openChatSidebar = () => {
+    setIsSidebarVisible(true);
+    void loadConversations();
+    Animated.timing(sidebarTranslateX, {
+      toValue: 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeChatSidebar = () => {
+    Animated.timing(sidebarTranslateX, {
+      toValue: -SIDEBAR_WIDTH,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setIsSidebarVisible(false);
+      }
+    });
+  };
+
+  const startNewConversation = () => {
+    Speech.stop();
+    setSpeakingMessageId(null);
+    setConversationId(undefined);
+    setMessages([]);
+    setDraftMessage("");
+    closeChatSidebar();
+  };
+
+  const handleSelectConversation = async (conversation: CoachConversationSummary) => {
+    if (selectingConversationId) {
+      return;
+    }
+
+    setSelectingConversationId(conversation.id);
+
+    try {
+      const response = await getCoachConversationMessages({
+        conversationId: conversation.id,
+        limit: 40,
+      });
+
+      Speech.stop();
+      setSpeakingMessageId(null);
+      setConversationId(response.conversationId);
+      setMessages(response.messages);
+      closeChatSidebar();
+      scrollToBottom();
+    } catch (error) {
+      showAlert({
+        title: "Could not open chat",
+        message: getUnknownErrorMessage(error, "This Sarathi chat could not be loaded right now."),
+      });
+    } finally {
+      setSelectingConversationId(null);
+    }
   };
 
   const stopSpeaking = () => {
@@ -704,6 +833,7 @@ export default function AICoachScreen() {
         speakMessage(assistantText, assistantMessageId);
       }
 
+      void loadConversations(true);
       scrollToBottom();
     } catch (error) {
       const message = getUnknownErrorMessage(
@@ -719,6 +849,114 @@ export default function AICoachScreen() {
       setIsSending(false);
     }
   };
+
+  const renderChatSidebar = () => (
+    <Modal
+      visible={isSidebarVisible}
+      transparent
+      animationType="none"
+      onRequestClose={closeChatSidebar}
+    >
+      <View style={styles.sidebarModalRoot}>
+        <Pressable style={styles.sidebarOverlay} onPress={closeChatSidebar} />
+        <Animated.View
+          style={[
+            styles.sidebarPanel,
+            { transform: [{ translateX: sidebarTranslateX }] },
+          ]}
+        >
+          <View style={styles.sidebarHeader}>
+            <View>
+              <Text style={styles.sidebarTitle}>Chats</Text>
+              <Text style={styles.sidebarSubtitle}>Sarathi remembers your recent context</Text>
+            </View>
+            <Pressable style={styles.sidebarCloseButton} onPress={closeChatSidebar}>
+              <X size={18} color={appTheme.colors.textPrimary} strokeWidth={2.2} />
+            </Pressable>
+          </View>
+
+          <Pressable style={styles.newChatButton} onPress={startNewConversation}>
+            <Plus size={17} color={appTheme.colors.onPrimary} strokeWidth={2.3} />
+            <Text style={styles.newChatButtonText}>New chat</Text>
+          </Pressable>
+
+          {isLoadingConversations ? (
+            <View style={styles.sidebarState}>
+              <ActivityIndicator size="small" color={appTheme.colors.primary} />
+              <Text style={styles.sidebarStateText}>Loading saved chats...</Text>
+            </View>
+          ) : conversationListError ? (
+            <View style={styles.sidebarState}>
+              <Text style={styles.sidebarStateText}>{conversationListError}</Text>
+              <Pressable
+                style={styles.retryButton}
+                onPress={() => {
+                  loadConversations().catch(() => {
+                    // handled in loadConversations
+                  });
+                }}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </Pressable>
+            </View>
+          ) : conversations.length ? (
+            <ScrollView
+              style={styles.conversationList}
+              contentContainerStyle={styles.conversationListContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {conversations.map((conversation) => {
+                const isCurrent = conversation.id === conversationId;
+                const isSelecting = selectingConversationId === conversation.id;
+
+                return (
+                  <Pressable
+                    key={conversation.id}
+                    style={[
+                      styles.conversationItem,
+                      isCurrent ? styles.conversationItemActive : null,
+                    ]}
+                    onPress={() => {
+                      handleSelectConversation(conversation).catch(() => {
+                        // handled in handleSelectConversation
+                      });
+                    }}
+                    disabled={Boolean(selectingConversationId)}
+                  >
+                    <View style={styles.conversationItemHeader}>
+                      <Text
+                        style={[
+                          styles.conversationTitle,
+                          isCurrent ? styles.conversationTitleActive : null,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {conversation.title || "Sarathi chat"}
+                      </Text>
+                      {isSelecting ? (
+                        <ActivityIndicator size="small" color={appTheme.colors.primary} />
+                      ) : (
+                        <Text style={styles.conversationDate}>
+                          {formatConversationDate(conversation.lastMessageAt)}
+                        </Text>
+                      )}
+                    </View>
+                    <Text style={styles.conversationPreview} numberOfLines={2}>
+                      {conversation.lastMessagePreview || "Open this conversation"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          ) : (
+            <View style={styles.sidebarState}>
+              <Text style={styles.sidebarStateText}>Your Sarathi chats will appear here.</Text>
+            </View>
+          )}
+        </Animated.View>
+      </View>
+    </Modal>
+  );
 
   const renderComposer = (variant: "center" | "bottom") => (
     <View style={[styles.composerWrap, variant === "center" ? styles.composerWrapCentered : null]}>
@@ -774,11 +1012,41 @@ export default function AICoachScreen() {
 
   return (
     <SafeAreaView style={globalStyles.screen} edges={["top", "left", "right"]}>
+      {renderChatSidebar()}
       <KeyboardAvoidingView
         style={styles.screenContent}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={0}
       >
+        <View style={styles.topBar}>
+          <Pressable style={styles.menuButton} onPress={openChatSidebar}>
+            <Menu size={22} color={appTheme.colors.textPrimary} strokeWidth={2.4} />
+          </Pressable>
+
+          <View style={styles.topBarText}>
+            <Text style={styles.topBarTitle}>Sarathi</Text>
+          </View>
+
+          <Pressable
+            style={[
+              styles.autoSpeakButton,
+              isAutoSpeakEnabled ? styles.autoSpeakButtonActive : null,
+            ]}
+            onPress={() => {
+              if (isAutoSpeakEnabled) {
+                stopSpeaking();
+              }
+              setIsAutoSpeakEnabled((value) => !value);
+            }}
+          >
+            {isAutoSpeakEnabled ? (
+              <Volume2 size={17} color={appTheme.colors.onPrimary} strokeWidth={2.2} />
+            ) : (
+              <VolumeX size={17} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
+            )}
+          </Pressable>
+        </View>
+
         {!hasStartedChat ? (
           <View style={styles.emptyState}>
             <View style={styles.emptyHeroText}>

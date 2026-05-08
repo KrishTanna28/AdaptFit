@@ -21,6 +21,17 @@ export type CoachChatMessage = {
   workoutPlan?: CoachWorkoutPlan;
 };
 
+export type CoachConversationSummary = {
+  id: string;
+  title: string;
+  lastMessagePreview: string;
+  lastMessageRole: CoachMessageRole;
+  messageCount: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+  lastMessageAt: string | null;
+};
+
 type CoachChatResponse = {
   conversationId: string;
   reply: string;
@@ -81,6 +92,10 @@ type CoachTranscriptionResponse = {
 type CoachMessagesResponse = {
   conversationId: string;
   messages: CoachChatMessage[];
+};
+
+type CoachConversationsResponse = {
+  conversations: CoachConversationSummary[];
 };
 
 const NUTRITION_API_BASE_URL = String(process.env.EXPO_PUBLIC_NUTRITION_API_BASE_URL ?? "")
@@ -261,6 +276,33 @@ export async function getCoachConversationMessages(input: {
   }
 
   return (await response.json()) as CoachMessagesResponse;
+}
+
+export async function getCoachConversations(input: {
+  limit?: number;
+} = {}): Promise<CoachConversationsResponse> {
+  const baseUrl = requireBaseUrl();
+  const idToken = await getAuthToken();
+  const params = new URLSearchParams();
+
+  if (typeof input.limit === "number" && Number.isFinite(input.limit) && input.limit > 0) {
+    params.set("limit", String(Math.floor(input.limit)));
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+
+  const response = await fetchCoachApi({
+    baseUrl,
+    path: `/api/coach/conversations${suffix}`,
+    method: "GET",
+    idToken,
+  });
+
+  if (!response.ok) {
+    throw await parseApiError(response);
+  }
+
+  return (await response.json()) as CoachConversationsResponse;
 }
 
 export async function getHomeCoachInsight(input: {
