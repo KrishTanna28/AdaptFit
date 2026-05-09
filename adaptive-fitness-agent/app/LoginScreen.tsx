@@ -74,8 +74,6 @@ const capabilities: Capability[] = [
   },
 ];
 
-const identitySignals = ["Steps", "Workouts", "Nutrition", "Recovery"];
-
 function HeroSystem() {
   return (
     <View

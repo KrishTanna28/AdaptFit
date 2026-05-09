@@ -334,8 +334,6 @@ export default function StepsHistoryModal({
     const stretched = available / (pointCount - 1);
     return Math.min(MAX_POINT_SPACING, Math.max(MIN_POINT_SPACING, stretched));
   }, [chartWidth, orderedPoints.length]);
-  const labelWidth = Math.max(18, Math.round(pointSpacing));
-
   const chartPoints: StepBarPoint[] = useMemo(
     () =>
       orderedPoints.map((point) => ({

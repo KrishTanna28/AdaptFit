@@ -18,7 +18,6 @@ import { appTheme } from "../theme/designSystem";
 
 export type HomeTabParamList = {
   Home: undefined;
-  Activity: undefined;
   Workout: undefined;
   Nutrition: undefined;
   Coach: undefined;

@@ -21,9 +21,7 @@
             "minSdkVersion": 26
           }
         }
-      ],
-      "expo-document-picker",
-      "@react-native-community/datetimepicker"
+      ]
     ],
     "version": "1.0.0",
     "orientation": "portrait",

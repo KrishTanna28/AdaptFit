@@ -29,7 +29,6 @@ export default function WorkoutFormCheckModal({
   const [step, setStep] = React.useState<FormCheckStep>("setup");
   const [exerciseName, setExerciseName] = React.useState("");
   const [isRecording, setIsRecording] = React.useState(false);
-  const [frameCount, setFrameCount] = React.useState(0);
   const [summary, setSummary] = React.useState<PoseMetricSummary | null>(null);
   const [analysis, setAnalysis] = React.useState<FormAnalysisResponse | null>(null);
   const [isAnalyzing, setIsAnalyzing] = React.useState(false);
@@ -41,7 +40,6 @@ export default function WorkoutFormCheckModal({
       setStep("setup");
       setExerciseName("");
       setIsRecording(false);
-      setFrameCount(0);
       setSummary(null);
       setAnalysis(null);
       setIsAnalyzing(false);
@@ -67,9 +65,6 @@ export default function WorkoutFormCheckModal({
 
   const handleFrameMetrics = React.useCallback((metrics: PoseFrameMetrics) => {
     framesRef.current.push(metrics);
-    if (framesRef.current.length % 6 === 0) {
-      setFrameCount(framesRef.current.length);
-    }
   }, []);
 
   const startRecording = () => {
@@ -81,7 +76,6 @@ export default function WorkoutFormCheckModal({
     framesRef.current = [];
     setSummary(null);
     setAnalysis(null);
-    setFrameCount(0);
     setErrorText("");
     setIsRecording(true);
   };
@@ -256,7 +250,6 @@ export default function WorkoutFormCheckModal({
             variant="secondary"
             onPress={() => {
               framesRef.current = [];
-              setFrameCount(0);
               setSummary(null);
               setAnalysis(null);
               setErrorText("");

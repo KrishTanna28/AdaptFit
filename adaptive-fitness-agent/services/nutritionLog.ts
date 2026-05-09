@@ -74,10 +74,6 @@ function normalizeEntry(raw: Partial<LoggedFoodEntry>): LoggedFoodEntry {
     };
 }
 
-function userNutritionLogsCollectionRef(uid: string) {
-    return collection(db, "users", uid, "nutritionLogs");
-}
-
 function dayDocRef(uid: string, dateKey: string) {
     return doc(db, "users", uid, "nutritionLogs", dateKey);
 }

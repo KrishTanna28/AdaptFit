@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
-  Animated,
   FlatList,
   Modal,
   Pressable,
@@ -60,7 +59,6 @@ const MIN_STEP_GOAL = 100;
 const MAX_STEP_GOAL = 100000;
 const STEP_GOAL_INCREMENT = 100;
 const GOAL_ROW_HEIGHT = 44;
-const STEPS_PROGRESS_THUMB_WIDTH = 48;
 const QUICK_WATER_AMOUNTS = [250, 500, 750];
 const RATING_OPTIONS = [1, 2, 3, 4, 5];
 const STEP_TREND_DAYS = 7;
@@ -152,30 +150,9 @@ export default function HomeScreen({
 
   const goalProgressPercent = Math.round(liveStepCounter.progress * 100);
   const goalProgressBarPercent = Math.min(Math.max(goalProgressPercent, 0), 100);
-  const goalProgressBarWidth = `${goalProgressBarPercent}%` as `${number}%`;
   const goalProgressLabel = String(goalProgressPercent) + "%";
   const stepsRingStrokeOffset =
     STEPS_RING_CIRCUMFERENCE * (1 - goalProgressBarPercent / 100);
-  const [stepsTrackWidth, setStepsTrackWidth] = useState(0);
-  const progressThumbPosition = useRef(
-    new Animated.Value(goalProgressBarPercent),
-  ).current;
-
-  useEffect(() => {
-    Animated.spring(progressThumbPosition, {
-      toValue: goalProgressBarPercent,
-      damping: 16,
-      stiffness: 140,
-      mass: 0.7,
-      useNativeDriver: false,
-    }).start();
-  }, [goalProgressBarPercent, progressThumbPosition]);
-
-  const progressThumbTranslateX = progressThumbPosition.interpolate({
-    inputRange: [0, 100],
-    outputRange: [0, Math.max(stepsTrackWidth - STEPS_PROGRESS_THUMB_WIDTH, 0)],
-    extrapolate: "clamp",
-  });
 
   const stepCountText = liveStepCounter.stepsToday.toLocaleString();
   const stepGoalText = `/${liveStepCounter.goal.toLocaleString()} steps`;

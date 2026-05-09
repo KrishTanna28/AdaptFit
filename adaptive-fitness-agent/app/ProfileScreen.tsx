@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { User } from "firebase/auth/react-native";
-import { addDoc, collection, doc, Firestore, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, Pencil } from "lucide-react-native";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
@@ -18,7 +18,7 @@ import AppButton from "../components/ui/AppButton";
 import { appTheme } from "../theme/designSystem";
 import { globalStyles } from "../theme/globalStyles";
 import { styles } from "./ProfileScreen.styles";
-import { Gender, FitnessGoal, Lifestyle, DietType, DropdownOption, ProfileFormData, EMPTY_PROFILE_FORM, GENDER_OPTIONS, FITNESS_GOAL_OPTIONS, LIFESTYLE_OPTIONS, DIET_TYPE_OPTIONS, GENDER_LABELS, FITNESS_GOAL_LABELS, LIFESTYLE_LABELS, DIET_TYPE_LABELS } from "./profileConfig"
+import { Gender, ProfileFormData, EMPTY_PROFILE_FORM, GENDER_LABELS, FITNESS_GOAL_LABELS, LIFESTYLE_LABELS, DIET_TYPE_LABELS } from "./profileConfig"
 import ProfileEditModal from "./ProfileEditModal"
 
 type ProfileScreenProps = {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import React, { useEffect, useMemo, useReducer, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -360,17 +360,6 @@ function getCurrentWeekRange(now = new Date()) {
   return { monday, sunday };
 }
 
-function formatDateOptionalLabel(dateKey: string, todayKey: string) {
-  if (dateKey === todayKey)
-    return "Today";
-  const d = parseDateKey(dateKey);
-  return d.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric"
-  })
-}
-
 function formatDateForDisplay(dateKey: string) {
   const d = parseDateKey(dateKey);
   return d.toLocaleDateString(undefined, {
@@ -400,9 +389,6 @@ export default function NutritionScreen() {
   const [entries, setEntries] = useState<LoggedFoodEntry[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingLog, setIsLoadingLog] = useState(true);
-  const [isMigratingLogs, setIsMigratingLogs] = useState(false);
-  const migrationAttemptedForUidRef = useRef<string | null>(null);
-
   const [modalDraft, dispatchModalDraft] = useReducer(
     nutritionModalDraftReducer,
     initialNutritionModalDraftState,
@@ -605,13 +591,6 @@ export default function NutritionScreen() {
         return;
       }
 
-      if (isMigratingLogs) {
-        if (mounted) {
-          setIsLoadingLog(true);
-        }
-        return;
-      }
-
       setIsLoadingLog(true);
 
       try {
@@ -645,7 +624,7 @@ export default function NutritionScreen() {
     return () => {
       mounted = false;
     };
-  }, [isMigratingLogs, showAlert, selectedDateKey, user?.uid]);
+  }, [showAlert, selectedDateKey, user?.uid]);
 
   const selectedFood = useMemo(
     () => results.find((item) => item.id === selectedFoodId) ?? null,

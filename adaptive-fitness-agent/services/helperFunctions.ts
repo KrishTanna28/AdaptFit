@@ -1,6 +1,3 @@
-import { collection, doc} from "firebase/firestore";
-import { db } from "./firebase";
-
 export function toText(value: unknown) {
   return typeof value === "string" ? value : "";
 }

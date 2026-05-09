@@ -399,17 +399,13 @@ export default function AICoachScreen() {
   const [conversationListError, setConversationListError] = useState("");
   const [selectingConversationId, setSelectingConversationId] = useState<string | null>(null);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
-  const [isAutoSpeakEnabled, setIsAutoSpeakEnabled] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [loadingWorkoutMessageId, setLoadingWorkoutMessageId] = useState<string | null>(null);
   const [loadingMealMessageId, setLoadingMealMessageId] = useState<string | null>(null);
   const [profileForCalories, setProfileForCalories] = useState<UserMetProfile | null>(null);
 
-  const hasPlayedIntroRef = useRef(false);
-
   const [animatedTitle, setAnimatedTitle] = useState("");
   const [animatedSubtitle, setAnimatedSubtitle] = useState("");
-  const [animatedHelper, setAnimatedHelper] = useState("");
 
   useEffect(() => {
     return () => {
@@ -508,7 +504,6 @@ export default function AICoachScreen() {
 
       setAnimatedTitle("");
       setAnimatedSubtitle("");
-      setAnimatedHelper("");
 
       const typeText = async (
         text: string,
@@ -1066,10 +1061,6 @@ export default function AICoachScreen() {
         workoutPlan: workoutPlan ?? undefined,
         mealPlan: mealPlan ?? undefined,
       });
-
-      if (isAutoSpeakEnabled) {
-        speakMessage(assistantText, assistantMessageId);
-      }
 
       void loadConversations(true);
       scrollToBottom();
