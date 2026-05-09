@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "663763796029",
+    "project_id": "adaptive-fitness-agent",
+    "storage_bucket": "adaptive-fitness-agent.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:663763796029:android:a0264d4d7d97a72ae86a54",
+        "android_client_info": {
+          "package_name": "com.krish.adaptivefitnessagent"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "663763796029-sehgr735o7f7livr48875jsbsfru2ndd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.krish.adaptivefitnessagent",
+            "certificate_hash": "e5f93b91fccbd02c2148eb6b165d259c3ce7bab5"
+          }
+        },
+        {
+          "client_id": "663763796029-smqpjccgt0vbk4p3hqjurjohjsgncue6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.krish.adaptivefitnessagent",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "663763796029-ioacpquvnv33urpacihq0fd5edulk8ae.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCFj3v2STeL1zH-n7FwnI1hcI6GHi1rjIM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "663763796029-ioacpquvnv33urpacihq0fd5edulk8ae.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
