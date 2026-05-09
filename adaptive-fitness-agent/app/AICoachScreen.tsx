@@ -23,6 +23,7 @@ import {
   Plus,
   SendHorizontal,
   Square,
+  Trash2,
   Volume2,
   VolumeX,
   X,
@@ -33,16 +34,20 @@ import AppButton from "../components/ui/AppButton";
 import { getUserFriendlyErrorMessage, useAppAlert } from "../components/ui/AppAlert";
 import { useAuthUser } from "../hooks/useAuthUser";
 import {
+  deleteCoachConversation,
   getCoachConversationMessages,
   getCoachConversations,
   sendCoachMessage,
   transcribeCoachAudio,
   type CoachChatMessage,
   type CoachConversationSummary,
+  type CoachMealPlan,
   type CoachWorkoutPlan,
 } from "../services/aiCoach";
 import { db } from "../services/firebase";
 import { getTodayDateKey } from "../services/helperFunctions";
+import type { MealType } from "../services/nutritionApi";
+import { upsertLoggedFoodEntry, type LoggedFoodEntry } from "../services/nutritionLog";
 import { searchWorkoutCatalog, type WorkoutCatalogItem } from "../services/workoutCatalogSearch";
 import {
   calculateWorkoutCalories,
@@ -66,6 +71,8 @@ import { styles } from "./AICoachScreen.styles";
 // ];
 
 const MAX_WORKOUT_EXERCISES = 16;
+const MAX_MEAL_ITEMS = 8;
+const MAX_PLAN_MEALS = 4;
 const SIDEBAR_WIDTH = 312;
 const WORKOUT_DEFAULTS = {
   secPerRep: 4,
@@ -73,6 +80,12 @@ const WORKOUT_DEFAULTS = {
   minSessionMin: 5,
 };
 const WORKOUT_INTENSITY: MetIntensity = "moderate";
+const MEAL_LABELS: Record<MealType, string> = {
+  breakfast: "Breakfast",
+  lunch: "Lunch",
+  dinner: "Dinner",
+  snacks: "Snacks",
+};
 
 function getUnknownErrorMessage(error: unknown, fallback: string) {
   const mapped = getUserFriendlyErrorMessage(error, "").trim();
@@ -122,6 +135,22 @@ function toPositiveInt(value: unknown): number | null {
   return Math.round(n);
 }
 
+function toNonNegativeNumber(value: unknown) {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.round(n * 10) / 10;
+}
+
+function normalizeMealType(value: unknown): MealType | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "breakfast") return "breakfast";
+  if (normalized === "lunch") return "lunch";
+  if (normalized === "dinner") return "dinner";
+  if (normalized === "snack" || normalized === "snacks") return "snacks";
+  return null;
+}
+
 function normalizeWorkoutPlan(value: unknown): CoachWorkoutPlan | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -157,6 +186,60 @@ function normalizeWorkoutPlan(value: unknown): CoachWorkoutPlan | null {
   return { title, exercises };
 }
 
+function normalizeMealPlan(value: unknown): CoachMealPlan | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const raw = value as { title?: unknown; meals?: unknown };
+  const title = typeof raw.title === "string" ? raw.title.trim() : "";
+  const mealsRaw = Array.isArray(raw.meals) ? raw.meals : [];
+  const meals = mealsRaw
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+
+      const data = entry as Record<string, unknown>;
+      const mealType = normalizeMealType(data.mealType);
+      const name = typeof data.name === "string" ? data.name.trim() : "";
+      const items = Array.isArray(data.items)
+        ? data.items
+            .map((item) => (typeof item === "string" ? item.trim() : ""))
+            .filter(Boolean)
+            .slice(0, MAX_MEAL_ITEMS)
+        : [];
+
+      if (!mealType || !name) {
+        return null;
+      }
+
+      return {
+        mealType,
+        name,
+        items,
+        calories: toNonNegativeNumber(data.calories),
+        protein: toNonNegativeNumber(data.protein),
+        carbs: toNonNegativeNumber(data.carbs),
+        fat: toNonNegativeNumber(data.fat),
+        fiber: toNonNegativeNumber(data.fiber),
+        sodiumMg: toNonNegativeNumber(data.sodiumMg),
+        potassiumMg: toNonNegativeNumber(data.potassiumMg),
+        calciumMg: toNonNegativeNumber(data.calciumMg),
+        ironMg: toNonNegativeNumber(data.ironMg),
+        vitaminCMg: toNonNegativeNumber(data.vitaminCMg),
+      };
+    })
+    .filter((entry): entry is CoachMealPlan["meals"][number] => entry !== null)
+    .slice(0, MAX_PLAN_MEALS);
+
+  if (!title || meals.length === 0) {
+    return null;
+  }
+
+  return { title, meals };
+}
+
 function parseWorkoutPlanFromText(text: string): CoachWorkoutPlan | null {
   const cleaned = extractJsonText(text);
   if (!cleaned) return null;
@@ -164,6 +247,18 @@ function parseWorkoutPlanFromText(text: string): CoachWorkoutPlan | null {
   try {
     const parsed = JSON.parse(cleaned) as unknown;
     return normalizeWorkoutPlan(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function parseMealPlanFromText(text: string): CoachMealPlan | null {
+  const cleaned = extractJsonText(text);
+  if (!cleaned) return null;
+
+  try {
+    const parsed = JSON.parse(cleaned) as unknown;
+    return normalizeMealPlan(parsed);
   } catch {
     return null;
   }
@@ -178,6 +273,14 @@ function buildWorkoutSummary(plan: CoachWorkoutPlan) {
   const count = plan.exercises.length;
   const label = count === 1 ? "exercise" : "exercises";
   return `Workout ready: ${plan.title}. Tap "Load Workout to Today" to add ${String(
+    count,
+  )} ${label}.`;
+}
+
+function buildMealSummary(plan: CoachMealPlan) {
+  const count = plan.meals.length;
+  const label = count === 1 ? "meal" : "meals";
+  return `Meal plan ready: ${plan.title}. Tap "Log All Meals" or log an individual meal to add ${String(
     count,
   )} ${label}.`;
 }
@@ -295,9 +398,11 @@ export default function AICoachScreen() {
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [conversationListError, setConversationListError] = useState("");
   const [selectingConversationId, setSelectingConversationId] = useState<string | null>(null);
+  const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
   const [isAutoSpeakEnabled, setIsAutoSpeakEnabled] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [loadingWorkoutMessageId, setLoadingWorkoutMessageId] = useState<string | null>(null);
+  const [loadingMealMessageId, setLoadingMealMessageId] = useState<string | null>(null);
   const [profileForCalories, setProfileForCalories] = useState<UserMetProfile | null>(null);
 
   const hasPlayedIntroRef = useRef(false);
@@ -336,7 +441,7 @@ export default function AICoachScreen() {
       setConversations(response.conversations);
     } catch (error) {
       setConversationListError(
-        getUnknownErrorMessage(error, "Could not load saved Sarathi chats."),
+        getUnknownErrorMessage(error, "Could not load saved Aether chats."),
       );
     } finally {
       if (!quiet) {
@@ -481,7 +586,7 @@ export default function AICoachScreen() {
   };
 
   const handleSelectConversation = async (conversation: CoachConversationSummary) => {
-    if (selectingConversationId) {
+    if (selectingConversationId || deletingConversationId) {
       return;
     }
 
@@ -502,11 +607,61 @@ export default function AICoachScreen() {
     } catch (error) {
       showAlert({
         title: "Could not open chat",
-        message: getUnknownErrorMessage(error, "This Sarathi chat could not be loaded right now."),
+        message: getUnknownErrorMessage(error, "This Aether chat could not be loaded right now."),
       });
     } finally {
       setSelectingConversationId(null);
     }
+  };
+
+  const handleDeleteConversation = async (targetConversationId: string) => {
+    if (deletingConversationId) {
+      return;
+    }
+
+    setDeletingConversationId(targetConversationId);
+
+    try {
+      await deleteCoachConversation({ conversationId: targetConversationId });
+
+      setConversations((prev) =>
+        prev.filter((conversation) => conversation.id !== targetConversationId),
+      );
+
+      if (conversationId === targetConversationId) {
+        Speech.stop();
+        setSpeakingMessageId(null);
+        setConversationId(undefined);
+        setMessages([]);
+        setDraftMessage("");
+      }
+    } catch (error) {
+      showAlert({
+        title: "Could not delete chat",
+        message: getUnknownErrorMessage(error, "This Aether chat could not be deleted right now."),
+      });
+    } finally {
+      setDeletingConversationId(null);
+    }
+  };
+
+  const confirmDeleteConversation = (conversation: CoachConversationSummary) => {
+    showAlert({
+      title: "Delete chat?",
+      message: "This removes the saved Aether conversation from your chat history.",
+      actions: [
+        { label: "Cancel", style: "secondary" },
+        {
+          label: "Delete",
+          style: "primary",
+          onPress: () => {
+            handleDeleteConversation(conversation.id).catch(() => {
+              // handled in handleDeleteConversation
+            });
+          },
+        },
+      ],
+    });
   };
 
   const stopSpeaking = () => {
@@ -781,6 +936,84 @@ export default function AICoachScreen() {
     }
   };
 
+  const handleLoadMealPlan = async (
+    plan: CoachMealPlan,
+    messageId: string,
+    mealIndex?: number,
+  ) => {
+    if (loadingMealMessageId) {
+      return;
+    }
+
+    if (!user?.uid) {
+      showAlert({
+        title: "Sign-in required",
+        message: "Please sign in to log meals.",
+      });
+      return;
+    }
+
+    const uid = user.uid;
+    const mealsToLog =
+      typeof mealIndex === "number" ? plan.meals.slice(mealIndex, mealIndex + 1) : plan.meals;
+
+    if (!mealsToLog.length) {
+      showAlert({
+        title: "No meal selected",
+        message: "Ask Aether to plan a meal again.",
+      });
+      return;
+    }
+
+    setLoadingMealMessageId(messageId);
+    const todayKey = getTodayDateKey();
+    const baseTimeMs = Date.now();
+
+    try {
+      const entries: LoggedFoodEntry[] = mealsToLog.map((meal, index) => ({
+        id: "entry-" + Date.now().toString() + "-" + Math.random().toString(36).slice(2, 8),
+        mealType: meal.mealType,
+        name: meal.name,
+        source: "Manual",
+        quantity: 1,
+        unit: "serving",
+        calories: toNonNegativeNumber(meal.calories),
+        protein: toNonNegativeNumber(meal.protein),
+        carbs: toNonNegativeNumber(meal.carbs),
+        fat: toNonNegativeNumber(meal.fat),
+        fiber: toNonNegativeNumber(meal.fiber),
+        sodiumMg: toNonNegativeNumber(meal.sodiumMg),
+        potassiumMg: toNonNegativeNumber(meal.potassiumMg),
+        calciumMg: toNonNegativeNumber(meal.calciumMg),
+        ironMg: toNonNegativeNumber(meal.ironMg),
+        vitaminCMg: toNonNegativeNumber(meal.vitaminCMg),
+        loggedAt: new Date(baseTimeMs + index * 1000).toISOString(),
+      }));
+
+      await Promise.all(entries.map((entry) => upsertLoggedFoodEntry(uid, todayKey, entry)));
+
+      const isSingleMeal = entries.length === 1;
+      showAlert({
+        title: isSingleMeal ? "Meal logged" : "Meals logged",
+        message: isSingleMeal
+          ? `${entries[0].name} was added to ${MEAL_LABELS[entries[0].mealType]}.`
+          : `Added ${String(entries.length)} planned meals to today's nutrition log.`,
+      });
+
+      navigation.navigate("Nutrition");
+    } catch (error) {
+      showAlert({
+        title: "Meal log failed",
+        message: getUnknownErrorMessage(
+          error,
+          "We couldn't log this meal plan right now. Please try again.",
+        ),
+      });
+    } finally {
+      setLoadingMealMessageId(null);
+    }
+  };
+
   const handleSend = async (inputText?: string) => {
     const messageText = (inputText ?? draftMessage).trim();
     const outboundPrompt = messageText;
@@ -816,10 +1049,14 @@ export default function AICoachScreen() {
       const assistantMessageId = `assistant-${Date.now()}`;
       const workoutPlan =
         response.workoutPlan ?? parseWorkoutPlanFromText(response.reply);
+      const mealPlan =
+        workoutPlan ? null : response.mealPlan ?? parseMealPlanFromText(response.reply);
       const cleanedReply = normalizeAssistantReply(response.reply);
       const assistantText =
         workoutPlan && (!cleanedReply || isLikelyJsonText(cleanedReply))
           ? buildWorkoutSummary(workoutPlan)
+          : mealPlan && (!cleanedReply || isLikelyJsonText(cleanedReply))
+            ? buildMealSummary(mealPlan)
           : cleanedReply;
       appendMessage({
         id: assistantMessageId,
@@ -827,6 +1064,7 @@ export default function AICoachScreen() {
         content: assistantText,
         createdAt: new Date().toISOString(),
         workoutPlan: workoutPlan ?? undefined,
+        mealPlan: mealPlan ?? undefined,
       });
 
       if (isAutoSpeakEnabled) {
@@ -838,11 +1076,11 @@ export default function AICoachScreen() {
     } catch (error) {
       const message = getUnknownErrorMessage(
         error,
-        "Sarathi could not respond right now. Please try again.",
+        "Aether could not respond right now. Please try again.",
       );
 
       showAlert({
-        title: "Sarathi unavailable",
+        title: "Aether unavailable",
         message,
       });
     } finally {
@@ -868,7 +1106,6 @@ export default function AICoachScreen() {
           <View style={styles.sidebarHeader}>
             <View>
               <Text style={styles.sidebarTitle}>Chats</Text>
-              <Text style={styles.sidebarSubtitle}>Sarathi remembers your recent context</Text>
             </View>
             <Pressable style={styles.sidebarCloseButton} onPress={closeChatSidebar}>
               <X size={18} color={appTheme.colors.textPrimary} strokeWidth={2.2} />
@@ -908,49 +1145,68 @@ export default function AICoachScreen() {
               {conversations.map((conversation) => {
                 const isCurrent = conversation.id === conversationId;
                 const isSelecting = selectingConversationId === conversation.id;
+                const isDeleting = deletingConversationId === conversation.id;
 
                 return (
-                  <Pressable
+                  <View
                     key={conversation.id}
                     style={[
                       styles.conversationItem,
                       isCurrent ? styles.conversationItemActive : null,
                     ]}
-                    onPress={() => {
-                      handleSelectConversation(conversation).catch(() => {
-                        // handled in handleSelectConversation
-                      });
-                    }}
-                    disabled={Boolean(selectingConversationId)}
                   >
-                    <View style={styles.conversationItemHeader}>
-                      <Text
-                        style={[
-                          styles.conversationTitle,
-                          isCurrent ? styles.conversationTitleActive : null,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {conversation.title || "Sarathi chat"}
-                      </Text>
-                      {isSelecting ? (
-                        <ActivityIndicator size="small" color={appTheme.colors.primary} />
-                      ) : (
-                        <Text style={styles.conversationDate}>
-                          {formatConversationDate(conversation.lastMessageAt)}
+                    <Pressable
+                      style={styles.conversationOpenArea}
+                      onPress={() => {
+                        handleSelectConversation(conversation).catch(() => {
+                          // handled in handleSelectConversation
+                        });
+                      }}
+                      disabled={Boolean(selectingConversationId || deletingConversationId)}
+                    >
+                      <View style={styles.conversationItemHeader}>
+                        <Text
+                          style={[
+                            styles.conversationTitle,
+                            isCurrent ? styles.conversationTitleActive : null,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {conversation.title || "Aether chat"}
                         </Text>
+                        {isSelecting ? (
+                          <ActivityIndicator size="small" color={appTheme.colors.primary} />
+                        ) : (
+                          <Text style={styles.conversationDate}>
+                            {formatConversationDate(conversation.lastMessageAt)}
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={styles.conversationPreview} numberOfLines={2}>
+                        {conversation.lastMessagePreview || "Open this conversation"}
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={styles.conversationDeleteButton}
+                      onPress={() => confirmDeleteConversation(conversation)}
+                      disabled={Boolean(deletingConversationId)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete saved chat"
+                    >
+                      {isDeleting ? (
+                        <ActivityIndicator size="small" color={appTheme.colors.danger} />
+                      ) : (
+                        <Trash2 size={16} color={appTheme.colors.textMuted} strokeWidth={2.2} />
                       )}
-                    </View>
-                    <Text style={styles.conversationPreview} numberOfLines={2}>
-                      {conversation.lastMessagePreview || "Open this conversation"}
-                    </Text>
-                  </Pressable>
+                    </Pressable>
+                  </View>
                 );
               })}
             </ScrollView>
           ) : (
             <View style={styles.sidebarState}>
-              <Text style={styles.sidebarStateText}>Your Sarathi chats will appear here.</Text>
+              <Text style={styles.sidebarStateText}>Your Aether chats will appear here.</Text>
             </View>
           )}
         </Animated.View>
@@ -981,7 +1237,7 @@ export default function AICoachScreen() {
           value={draftMessage}
           onChangeText={setDraftMessage}
           style={styles.input}
-          placeholder="Message Sarathi"
+          placeholder="Message Aether"
           placeholderTextColor={appTheme.colors.textMuted}
           multiline
           editable={!isSending && !isTranscribing}
@@ -1023,28 +1279,6 @@ export default function AICoachScreen() {
             <Menu size={22} color={appTheme.colors.textPrimary} strokeWidth={2.4} />
           </Pressable>
 
-          <View style={styles.topBarText}>
-            <Text style={styles.topBarTitle}>Sarathi</Text>
-          </View>
-
-          <Pressable
-            style={[
-              styles.autoSpeakButton,
-              isAutoSpeakEnabled ? styles.autoSpeakButtonActive : null,
-            ]}
-            onPress={() => {
-              if (isAutoSpeakEnabled) {
-                stopSpeaking();
-              }
-              setIsAutoSpeakEnabled((value) => !value);
-            }}
-          >
-            {isAutoSpeakEnabled ? (
-              <Volume2 size={17} color={appTheme.colors.onPrimary} strokeWidth={2.2} />
-            ) : (
-              <VolumeX size={17} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
-            )}
-          </Pressable>
         </View>
 
         {!hasStartedChat ? (
@@ -1076,6 +1310,7 @@ export default function AICoachScreen() {
               {messages.map((message) => {
                 const isAssistant = message.role === "assistant";
                 const workoutPlan = isAssistant ? message.workoutPlan : undefined;
+                const mealPlan = isAssistant ? message.mealPlan : undefined;
 
                 if (workoutPlan) {
                   const isLoadingPlan = loadingWorkoutMessageId === message.id;
@@ -1084,7 +1319,7 @@ export default function AICoachScreen() {
                     <View key={message.id} style={[styles.messageRow, styles.assistantRow]}>
                       <View style={styles.workoutCard}>
                         <View style={styles.workoutCardHeader}>
-                          <Text style={styles.workoutCardEyebrow}>Sarathi workout</Text>
+                          <Text style={styles.workoutCardEyebrow}>Aether workout</Text>
                           <Text style={styles.workoutCardTitle}>{workoutPlan.title}</Text>
                           {message.content ? (
                             <Text style={styles.workoutCardSubtitle}>{message.content}</Text>
@@ -1117,6 +1352,86 @@ export default function AICoachScreen() {
                             onPress={() => {
                               handleLoadWorkoutPlan(workoutPlan, message.id).catch(() => {
                                 // handled in handleLoadWorkoutPlan
+                              });
+                            }}
+                            loading={isLoadingPlan}
+                            disabled={isLoadingPlan}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  );
+                }
+
+                if (mealPlan) {
+                  const isLoadingPlan = loadingMealMessageId === message.id;
+
+                  return (
+                    <View key={message.id} style={[styles.messageRow, styles.assistantRow]}>
+                      <View style={styles.workoutCard}>
+                        <View style={styles.workoutCardHeader}>
+                          <Text style={styles.workoutCardEyebrow}>Aether meals</Text>
+                          <Text style={styles.workoutCardTitle}>{mealPlan.title}</Text>
+                          {message.content ? (
+                            <Text style={styles.workoutCardSubtitle}>{message.content}</Text>
+                          ) : null}
+                        </View>
+
+                        <View style={styles.workoutExerciseList}>
+                          {mealPlan.meals.map((meal, index) => {
+                            const isLast = index === mealPlan.meals.length - 1;
+                            const macroText = `${Math.round(meal.calories)} kcal | P ${meal.protein}g | C ${meal.carbs}g | F ${meal.fat}g`;
+
+                            return (
+                              <View
+                                key={`${meal.mealType}-${meal.name}-${String(index)}`}
+                                style={[
+                                  styles.mealPlanRow,
+                                  isLast ? { borderBottomWidth: 0, paddingBottom: 0 } : null,
+                                ]}
+                              >
+                                <View style={styles.mealPlanTextWrap}>
+                                  <Text style={styles.workoutExerciseMeta}>
+                                    {MEAL_LABELS[meal.mealType]}
+                                  </Text>
+                                  <Text style={styles.workoutExerciseName}>{meal.name}</Text>
+                                  {meal.items.length ? (
+                                    <Text style={styles.workoutCardSubtitle} numberOfLines={2}>
+                                      {meal.items.join(", ")}
+                                    </Text>
+                                  ) : null}
+                                  <Text style={styles.workoutExerciseMeta}>{macroText}</Text>
+                                </View>
+
+                                <Pressable
+                                  style={[
+                                    styles.mealLogButton,
+                                    isLoadingPlan ? styles.mealLogButtonDisabled : null,
+                                  ]}
+                                  disabled={isLoadingPlan}
+                                  onPress={() => {
+                                    handleLoadMealPlan(mealPlan, message.id, index).catch(() => {
+                                      // handled in handleLoadMealPlan
+                                    });
+                                  }}
+                                >
+                                  {isLoadingPlan ? (
+                                    <ActivityIndicator size="small" color={appTheme.colors.primary} />
+                                  ) : (
+                                    <Text style={styles.mealLogButtonText}>Log</Text>
+                                  )}
+                                </Pressable>
+                              </View>
+                            );
+                          })}
+                        </View>
+
+                        <View style={styles.workoutCardFooter}>
+                          <AppButton
+                            title={isLoadingPlan ? "Logging..." : "Log All Meals"}
+                            onPress={() => {
+                              handleLoadMealPlan(mealPlan, message.id).catch(() => {
+                                // handled in handleLoadMealPlan
                               });
                             }}
                             loading={isLoadingPlan}
@@ -1169,7 +1484,7 @@ export default function AICoachScreen() {
                 <View style={[styles.messageRow, styles.assistantRow]}>
                   <View style={[styles.messageBubble, styles.assistantBubble, styles.thinkingBubble]}>
                     <ActivityIndicator size="small" color={appTheme.colors.primary} />
-                    <Text style={styles.thinkingText}>Sarathi is thinking...</Text>
+                    <Text style={styles.thinkingText}>Aether is thinking...</Text>
                   </View>
                 </View>
               ) : null}

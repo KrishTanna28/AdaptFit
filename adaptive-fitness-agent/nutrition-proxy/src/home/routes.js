@@ -14,7 +14,7 @@ const STEP_HISTORY_ARCHIVE_TTL_SECONDS = toPositiveInt(
   process.env.REDIS_STEP_HISTORY_ARCHIVE_TTL_SECONDS,
   86400,
 );
-const CACHE_SCHEMA_VERSION = "v1";
+const CACHE_SCHEMA_VERSION = "v2";
 
 const CHUNK_SIZE = {
   days: 7,
@@ -380,6 +380,35 @@ function buildWorkoutStreak(context) {
   return streak;
 }
 
+async function buildStepGoalStreak(db, uid, dailyGoal, context) {
+  const dateKeys = buildRecentDateKeys(365);
+  const logsByKey = await loadStepLogs(db, uid, dateKeys);
+  const fallbackGoal = Math.max(0, Math.round(dailyGoal || context.stepGoal || 0));
+
+  const isGoalMetForDate = (dateKey) => {
+    const log = logsByKey.get(dateKey);
+    if (!log) {
+      return false;
+    }
+
+    const target = Math.max(0, Math.round(log.goal > 0 ? log.goal : fallbackGoal));
+    return target > 0 && Math.max(0, Math.round(log.steps)) >= target;
+  };
+
+  const logsToCount = isGoalMetForDate(dateKeys[0]) ? dateKeys : dateKeys.slice(1);
+  let streak = 0;
+
+  for (const dateKey of logsToCount) {
+    if (isGoalMetForDate(dateKey)) {
+      streak += 1;
+    } else {
+      break;
+    }
+  }
+
+  return streak;
+}
+
 async function buildHomeSummary(db, uid, dailyGoal) {
   const context = await loadCoachContext(db, uid, {
     windowDays: 30,
@@ -393,6 +422,7 @@ async function buildHomeSummary(db, uid, dailyGoal) {
     dailyGoal: dailyGoal || context.stepGoal || 0,
   });
   const stepHistory = await loadStepsForRanges(db, uid, stepRanges);
+  const stepGoalStreak = await buildStepGoalStreak(db, uid, dailyGoal, context);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -402,6 +432,7 @@ async function buildHomeSummary(db, uid, dailyGoal) {
     workoutEntries,
     lifestyleLog: getLifestyleLogForDate(context, todayKey),
     profileWeightKg: context.profile.weightKg ?? null,
+    stepGoalStreak,
     workoutStreak: buildWorkoutStreak(context),
     stepHistory,
     cacheSource: "redis-miss",

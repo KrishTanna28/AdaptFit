@@ -13,12 +13,36 @@ export type CoachWorkoutPlan = {
   exercises: CoachWorkoutExercise[];
 };
 
+export type CoachMealType = "breakfast" | "lunch" | "dinner" | "snacks";
+
+export type CoachMealPlanMeal = {
+  mealType: CoachMealType;
+  name: string;
+  items: string[];
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber: number;
+  sodiumMg: number;
+  potassiumMg: number;
+  calciumMg: number;
+  ironMg: number;
+  vitaminCMg: number;
+};
+
+export type CoachMealPlan = {
+  title: string;
+  meals: CoachMealPlanMeal[];
+};
+
 export type CoachChatMessage = {
   id: string;
   role: CoachMessageRole;
   content: string;
   createdAt: string;
   workoutPlan?: CoachWorkoutPlan;
+  mealPlan?: CoachMealPlan;
 };
 
 export type CoachConversationSummary = {
@@ -36,6 +60,7 @@ type CoachChatResponse = {
   conversationId: string;
   reply: string;
   workoutPlan?: CoachWorkoutPlan;
+  mealPlan?: CoachMealPlan;
   model?: string;
   usage?: {
     promptTokenCount: number;
@@ -98,6 +123,11 @@ type CoachConversationsResponse = {
   conversations: CoachConversationSummary[];
 };
 
+type DeleteCoachConversationResponse = {
+  conversationId: string;
+  deleted: boolean;
+};
+
 const NUTRITION_API_BASE_URL = String(process.env.EXPO_PUBLIC_NUTRITION_API_BASE_URL ?? "")
   .trim()
   .replace(/\/$/, "");
@@ -119,7 +149,7 @@ function requireBaseUrl() {
 async function getAuthToken() {
   const user = auth.currentUser;
   if (!user) {
-    throw new Error("You need to be signed in to use Sarathi.");
+    throw new Error("You need to be signed in to use Aether.");
   }
 
   return user.getIdToken();
@@ -139,7 +169,7 @@ function buildApiUnreachableMessage(baseUrl: string) {
 async function fetchCoachApi(input: {
   baseUrl: string;
   path: string;
-  method: "GET" | "POST";
+  method: "DELETE" | "GET" | "POST";
   idToken: string;
   body?: unknown;
 }): Promise<Response> {
@@ -305,6 +335,31 @@ export async function getCoachConversations(input: {
   return (await response.json()) as CoachConversationsResponse;
 }
 
+export async function deleteCoachConversation(input: {
+  conversationId: string;
+}): Promise<DeleteCoachConversationResponse> {
+  const baseUrl = requireBaseUrl();
+  const idToken = await getAuthToken();
+  const conversationId = safeTrim(input.conversationId);
+
+  if (!conversationId) {
+    throw new Error("conversationId is required.");
+  }
+
+  const response = await fetchCoachApi({
+    baseUrl,
+    path: `/api/coach/conversations/${encodeURIComponent(conversationId)}`,
+    method: "DELETE",
+    idToken,
+  });
+
+  if (!response.ok) {
+    throw await parseApiError(response);
+  }
+
+  return (await response.json()) as DeleteCoachConversationResponse;
+}
+
 export async function getHomeCoachInsight(input: {
   contextWindowDays?: number;
 } = {}): Promise<HomeInsightsResponse> {
@@ -339,7 +394,7 @@ export async function getHomeCoachInsight(input: {
     ...payload,
     insight: {
       title: safeTrim(rawInsight.title) || "Today's focus",
-      summary: safeTrim(rawInsight.summary) || "Log your meals, movement, water, and sleep so Sarathi can coach with better context.",
+      summary: safeTrim(rawInsight.summary) || "Log your meals, movement, water, and sleep so Aether can coach with better context.",
       focus: safeTrim(rawInsight.focus) || "Consistency",
       actions: Array.isArray(rawInsight.actions)
         ? rawInsight.actions.map(safeTrim).filter(Boolean).slice(0, 3)

@@ -475,21 +475,23 @@ export default function ProfileScreen({ user }: ProfileScreenProps) {
     };
 
     const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      await GoogleSignin.signOut();
-    } catch (error) {
-      const message = getUserFriendlyErrorMessage(
-        error,
-        "We couldn't log you out right now. Please try again.",
-      );
+        try {
+            await GoogleSignin.signOut().catch(() => {
+                // Firebase sign-out is the source of truth for leaving the app.
+            });
+            await signOut(auth);
+        } catch (error) {
+            const message = getUserFriendlyErrorMessage(
+                error,
+                "We couldn't log you out right now. Please try again.",
+            );
 
-      showAlert({
-        title: "Couldn't log out",
-        message,
-      });
-    }
-  };
+            showAlert({
+                title: "Couldn't log out",
+                message,
+            });
+        }
+    };
 
     const profileRows = [
         { label: "Name", value: toFallbackValue(profile.name || user.displayName || "") },

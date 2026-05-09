@@ -11,6 +11,7 @@ export type CachedHomeSummary = {
   workoutEntries: LoggedWorkoutEntry[];
   lifestyleLog: DailyLifestyleLog;
   profileWeightKg: number | null;
+  stepGoalStreak?: number;
   workoutStreak: number;
   stepHistory: StepHistoryPoint[];
   cacheSource?: string;

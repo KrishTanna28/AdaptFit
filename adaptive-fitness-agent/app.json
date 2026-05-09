@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Aarogyam",
+    "name": "AdaptFit",
     "slug": "aarogyam",
     "scheme": "adaptivefitnessagent",
     "plugins": [
@@ -9,7 +9,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Aarogyam to use the camera for workout form checks and plate food logging."
+          "cameraPermission": "Allow AdaptFit to use the camera for workout form checks and plate food logging."
         }
       ],
       [
@@ -39,7 +39,7 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSMotionUsageDescription": "This app uses motion data to count your steps in real time.",
-        "NSMicrophoneUsageDescription": "This app uses the microphone so you can dictate messages to Sarathi.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone so you can dictate messages to Aether.",
         "NSCameraUsageDescription": "This app uses the camera to analyze workout form and capture plate photos for food logging."
       },
       "supportsTablet": true,

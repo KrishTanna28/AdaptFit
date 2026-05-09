@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import type { User } from "firebase/auth/react-native";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
-import { Pizza, Flame, House, Lightbulb, User as UserIcon } from "lucide-react-native";
+import { Pizza, Dumbbell, House, BrainCircuit, User as UserIcon } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AICoachScreen from "./AICoachScreen";
@@ -242,7 +242,7 @@ export default function HomeTabs({ user }: HomeTabsProps) {
         component={WorkoutScreen}
         options={{
           tabBarIcon: ({ color }) => (
-            <Flame size={appTheme.sizes.tabIcon} color={color} strokeWidth={2.2} />
+            <Dumbbell size={appTheme.sizes.tabIcon} color={color} strokeWidth={2.2} />
           ),
         }}
       />
@@ -261,9 +261,9 @@ export default function HomeTabs({ user }: HomeTabsProps) {
         name="Coach"
         component={AICoachScreen}
         options={{
-          title: "Sarathi",
+          title: "Aether",
           tabBarIcon: ({ color }) => (
-            <Lightbulb size={appTheme.sizes.tabIcon} color={color} strokeWidth={2.2} />
+            <BrainCircuit size={appTheme.sizes.tabIcon} color={color} strokeWidth={2.2} />
           ),
         }}
       />

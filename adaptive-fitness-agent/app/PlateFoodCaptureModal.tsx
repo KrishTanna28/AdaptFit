@@ -93,7 +93,7 @@ export default function PlateFoodCaptureModal({
             />
 
             <Text style={styles.hintText}>
-              Sarathi estimates food items and portions automatically. Add weight only if you measured it.
+              Aether estimates food items and portions automatically. Add weight only if you measured it.
             </Text>
 
             <View style={styles.modalActions}>

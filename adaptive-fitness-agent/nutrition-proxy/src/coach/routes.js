@@ -7,6 +7,7 @@ import {
   listConversationMessages,
   listConversations,
   listRecentConversationContext,
+  deleteConversation,
 } from "./conversationStore.js";
 import { loadCoachContext } from "./context.js";
 import { getCoachFirestore, verifyCoachIdToken } from "./firebaseAdmin.js";
@@ -25,6 +26,11 @@ const MAX_AUDIO_BASE64_LENGTH = 8 * 1024 * 1024;
 const MAX_WORKOUT_TITLE_LENGTH = 80;
 const MAX_WORKOUT_NAME_LENGTH = 80;
 const MAX_WORKOUT_EXERCISES = 16;
+const MAX_MEAL_TITLE_LENGTH = 80;
+const MAX_MEAL_NAME_LENGTH = 90;
+const MAX_MEAL_ITEM_LENGTH = 60;
+const MAX_MEAL_ITEMS = 8;
+const MAX_PLAN_MEALS = 4;
 const HOME_INSIGHT_TTL_SECONDS = 7 * 24 * 60 * 60;
 const HOME_INSIGHT_CACHE_VERSION = "v1";
 
@@ -118,6 +124,23 @@ function toPositiveInt(value) {
   return Math.round(n);
 }
 
+function toNonNegativeNumber(value) {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    return 0;
+  }
+  return Math.round(n * 10) / 10;
+}
+
+function normalizeMealType(value) {
+  const normalized = toSafeMessage(value).toLowerCase();
+  if (normalized === "breakfast") return "breakfast";
+  if (normalized === "lunch") return "lunch";
+  if (normalized === "dinner") return "dinner";
+  if (normalized === "snack" || normalized === "snacks") return "snacks";
+  return "";
+}
+
 function normalizeWorkoutPlan(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return null;
@@ -161,6 +184,74 @@ function parseWorkoutPlan(text) {
 
   try {
     return normalizeWorkoutPlan(JSON.parse(cleaned));
+  } catch {
+    return null;
+  }
+}
+
+function normalizeMealPlan(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+
+  const title = toSafeMessage(raw.title).slice(0, MAX_MEAL_TITLE_LENGTH);
+  const mealsRaw = Array.isArray(raw.meals) ? raw.meals : [];
+  const meals = mealsRaw
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const mealType = normalizeMealType(item.mealType);
+      const name = toSafeMessage(item.name).slice(0, MAX_MEAL_NAME_LENGTH);
+      const items = Array.isArray(item.items)
+        ? item.items
+            .map((food) => toSafeMessage(food).slice(0, MAX_MEAL_ITEM_LENGTH))
+            .filter(Boolean)
+            .slice(0, MAX_MEAL_ITEMS)
+        : [];
+
+      if (!mealType || !name) {
+        return null;
+      }
+
+      return {
+        mealType,
+        name,
+        items,
+        calories: toNonNegativeNumber(item.calories),
+        protein: toNonNegativeNumber(item.protein),
+        carbs: toNonNegativeNumber(item.carbs),
+        fat: toNonNegativeNumber(item.fat),
+        fiber: toNonNegativeNumber(item.fiber),
+        sodiumMg: toNonNegativeNumber(item.sodiumMg),
+        potassiumMg: toNonNegativeNumber(item.potassiumMg),
+        calciumMg: toNonNegativeNumber(item.calciumMg),
+        ironMg: toNonNegativeNumber(item.ironMg),
+        vitaminCMg: toNonNegativeNumber(item.vitaminCMg),
+      };
+    })
+    .filter((item) => item !== null)
+    .slice(0, MAX_PLAN_MEALS);
+
+  if (!title || meals.length === 0) {
+    return null;
+  }
+
+  return {
+    title,
+    meals,
+  };
+}
+
+function parseMealPlan(text) {
+  const cleaned = extractJsonText(text);
+  if (!cleaned) {
+    return null;
+  }
+
+  try {
+    return normalizeMealPlan(JSON.parse(cleaned));
   } catch {
     return null;
   }
@@ -269,6 +360,14 @@ function buildWorkoutReply(workoutPlan) {
   return `Workout ready: ${workoutPlan.title}. Tap "Load Workout to Today" to add ${String(
     count,
   )} ${label}.`;
+}
+
+function buildMealReply(mealPlan) {
+  const count = mealPlan.meals.length;
+  const label = count === 1 ? "meal" : "meals";
+  return `Meal plan ready: ${mealPlan.title}. Tap "Log All Meals" or log an individual meal to add ${String(
+    count,
+  )} ${label} to today's nutrition log.`;
 }
 
 function normalizeWindowDays(value) {
@@ -390,7 +489,12 @@ export function mountCoachRoutes(app) {
       });
 
       let workoutPlan = parseWorkoutPlan(coachResponse.text);
-      let replyText = workoutPlan ? buildWorkoutReply(workoutPlan) : coachResponse.text;
+      const mealPlan = workoutPlan ? null : parseMealPlan(coachResponse.text);
+      let replyText = workoutPlan
+        ? buildWorkoutReply(workoutPlan)
+        : mealPlan
+          ? buildMealReply(mealPlan)
+          : coachResponse.text;
       const workoutGoalAchievedToday = Boolean(contextWithChatHistory?.recency?.workoutGoalAchievedToday);
 
       if (workoutPlan && workoutGoalAchievedToday) {
@@ -419,6 +523,7 @@ export function mountCoachRoutes(app) {
         contextWindow: contextWithChatHistory.window,
         attachmentsUsed: attachments.length,
         workoutPlan: workoutPlan ?? undefined,
+        mealPlan: mealPlan ?? undefined,
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown error";
@@ -572,6 +677,28 @@ export function mountCoachRoutes(app) {
     } catch (error) {
       return res.status(500).json({
         message: "Failed to load conversation messages.",
+        detail: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  router.delete("/conversations/:conversationId", requireCoachUser, async (req, res) => {
+    try {
+      const conversationId = String(req.params.conversationId ?? "").trim();
+      if (!conversationId) {
+        return res.status(400).json({ message: "conversationId is required." });
+      }
+
+      const db = getCoachFirestore();
+      const deleted = await deleteConversation(db, req.coachUser.uid, conversationId);
+
+      return res.json({
+        conversationId,
+        deleted,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Failed to delete conversation.",
         detail: error instanceof Error ? error.message : "Unknown error",
       });
     }

@@ -121,9 +121,8 @@ export default function BarcodeFoodScannerModal({
 
             <Text style={styles.hintText}>
               {cameraError ||
-                (isResolving
-                  ? "Looking up barcode nutrition..."
-                  : "Scanned foods open as editable meal entries.")}
+                (isResolving && 
+                  "Looking up barcode nutrition...")}
             </Text>
           </View>
         </View>

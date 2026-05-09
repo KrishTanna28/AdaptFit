@@ -57,7 +57,7 @@ function toNullableIsoTimestamp(value) {
 function buildConversationTitle(content) {
   const normalized = String(content ?? "").replace(/\s+/g, " ").trim();
   if (!normalized) {
-    return "New Sarathi chat";
+    return "New Aether chat";
   }
   return normalized.length > 72 ? `${normalized.slice(0, 69)}...` : normalized;
 }
@@ -219,4 +219,35 @@ export async function listRecentConversationContext(db, uid, currentConversation
   );
 
   return withMessages.filter((conversation) => conversation.messages.length > 0);
+}
+
+export async function deleteConversation(db, uid, conversationId) {
+  if (!conversationId || typeof conversationId !== "string") {
+    return false;
+  }
+
+  const ref = conversationRef(db, uid, conversationId);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) {
+    return false;
+  }
+
+  const messageSnapshot = await messageCollectionRef(db, uid, conversationId).get();
+  let batch = db.batch();
+  let batchSize = 0;
+
+  for (const messageDoc of messageSnapshot.docs) {
+    batch.delete(messageDoc.ref);
+    batchSize += 1;
+
+    if (batchSize >= 450) {
+      await batch.commit();
+      batch = db.batch();
+      batchSize = 0;
+    }
+  }
+
+  batch.delete(ref);
+  await batch.commit();
+  return true;
 }

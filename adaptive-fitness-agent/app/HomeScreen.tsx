@@ -17,7 +17,7 @@ import {
   type User,
 } from "firebase/auth/react-native";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
-import { Flame, Lightbulb, Droplets, Moon, X } from "lucide-react-native";
+import { Flame, BrainCircuit, Droplets, Moon, X } from "lucide-react-native";
 import Svg, { Circle } from "react-native-svg";
 import { useFocusEffect } from "@react-navigation/native";
 import type { LoggedWorkoutEntry } from "../services/workoutLog";
@@ -192,7 +192,7 @@ export default function HomeScreen({
   const [workoutEntries, setWorkoutEntries] = useState<LoggedWorkoutEntry[]>([]);
   const [profileWeightKg, setProfileWeightKg] = useState<number | null>(null);
   const [lifestyleLog, setLifestyleLog] = useState<DailyLifestyleLog | null>(null);
-  const [workoutStreak, setWorkoutStreak] = useState(0);
+  const [stepGoalStreak, setStepGoalStreak] = useState(0);
   const [stepHistory, setStepHistory] = useState<StepHistoryPoint[]>([]);
   const [isLoadingStepHistory, setIsLoadingStepHistory] = useState(false);
   const [trendChartWidth, setTrendChartWidth] = useState(0);
@@ -222,7 +222,7 @@ export default function HomeScreen({
       setWorkoutEntries(summary.workoutEntries);
       setLifestyleLog(summary.lifestyleLog);
       setProfileWeightKg(summary.profileWeightKg);
-      setWorkoutStreak(summary.workoutStreak);
+      setStepGoalStreak(summary.stepGoalStreak ?? summary.workoutStreak ?? 0);
       setStepHistory(summary.stepHistory.slice(0, STEP_TREND_DAYS));
     } catch {
       setCaloriesIntake(0);
@@ -230,7 +230,7 @@ export default function HomeScreen({
       setWorkoutEntries([]);
       setLifestyleLog(null);
       setProfileWeightKg(null);
-      setWorkoutStreak(0);
+      setStepGoalStreak(0);
       setStepHistory([]);
     } finally {
       setIsLoadingCaloriesIntake(false);
@@ -250,7 +250,7 @@ export default function HomeScreen({
       setHomeInsightError(
         getUserFriendlyErrorMessage(
           error,
-          "Sarathi insights are unavailable right now.",
+          "Aether insights are unavailable right now.",
         ),
       );
     } finally {
@@ -336,6 +336,16 @@ export default function HomeScreen({
     return Math.min(MINI_CHART_MAX_SPACING, Math.max(MINI_CHART_MIN_SPACING, stretched));
   }, [stepTrendPoints.length, stepTrendWidth]);
   const stepTrendLabelWidth = Math.max(14, Math.round(stepTrendSpacing));
+  const displayStepGoalStreak = useMemo(() => {
+    const todayPoint = stepHistory[0];
+    const liveGoalMet = liveStepCounter.goal > 0 && liveStepCounter.stepsToday >= liveStepCounter.goal;
+
+    if (liveGoalMet && (!todayPoint || !todayPoint.isGoalMet)) {
+      return stepGoalStreak + 1;
+    }
+
+    return stepGoalStreak;
+  }, [liveStepCounter.goal, liveStepCounter.stepsToday, stepGoalStreak, stepHistory]);
 
   useEffect(() => {
     if (isHydrationModalVisible) {
@@ -585,10 +595,6 @@ export default function HomeScreen({
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.container}>
-          <AppCard style={styles.profileCard}>
-            <Text style={styles.sectionLabel}>Welcome {user.displayName || "back"}!</Text>
-          </AppCard>
-
           <Pressable
             onPress={() => setIsGoalModalVisible(true)}
             accessibilityRole="button"
@@ -656,7 +662,7 @@ export default function HomeScreen({
               <Text style={styles.metricsTitle}>Today's summary</Text>
               <View style={styles.streakPill}>
                 <Flame size={14} color={appTheme.colors.primary} strokeWidth={2.2} />
-                <Text style={styles.streakText}>{String(workoutStreak)}</Text>
+                <Text style={styles.streakText}>{String(displayStepGoalStreak)}</Text>
               </View>
             </View>
 
@@ -683,13 +689,13 @@ export default function HomeScreen({
           <AppCard style={styles.insightCard}>
             <View style={styles.insightHeaderRow}>
               <View style={styles.insightIconBubble}>
-                <Lightbulb size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
+                <BrainCircuit size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
               </View>
               <View style={styles.insightTextWrap}>
                 <Text style={styles.insightTitle}>
                   {isLoadingHomeInsight
-                    ? "Sarathi is checking in"
-                    : homeInsight?.title || "Sarathi insight"}
+                    ? "Aether is checking in"
+                    : homeInsight?.title || "Aether insight"}
                 </Text>
                 <Text style={styles.insightSummary}>
                   {isLoadingHomeInsight
@@ -1009,7 +1015,7 @@ export default function HomeScreen({
             <View style={styles.sheetHeaderRow}>
               <View style={styles.sheetHeaderText}>
                 <Text style={styles.sheetTitle}>Sleep log</Text>
-                <Text style={styles.sheetSubtitle}>Track recovery so Sarathi can coach better.</Text>
+                <Text style={styles.sheetSubtitle}>Track recovery so Aether can coach better.</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
