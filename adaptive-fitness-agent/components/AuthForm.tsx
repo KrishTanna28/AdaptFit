@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, TouchableOpacity, Text } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import AppTextField from "./ui/AppTextField";
@@ -17,9 +17,110 @@ type AuthFormProps = {
   onToggleMode: () => void;
   onGoogleSignIn: () => void;
   googleDisabled: boolean;
+  loading?: boolean;
+  signupOtpSentTo?: string;
 };
 
-export default function AuthForm({
+type OtpVerificationContentProps = {
+  email: string;
+  loading?: boolean;
+  onResend: () => Promise<void> | void;
+  onVerify: (otp: string) => Promise<void> | void;
+};
+
+export function OtpVerificationContent({
+  email,
+  loading = false,
+  onResend,
+  onVerify,
+} : OtpVerificationContentProps) {
+  const [signupOtp, setSignupOtp] = useState<string>("");
+  const [errorMessage, setErrorMessage] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const disabled = loading || submitting;
+
+  const getErrorMessage = (error: unknown) =>
+    error instanceof Error ? error.message : "We couldn't verify that code right now.";
+
+  const handleVerify = async () => {
+    if (!/^\d{6}$/.test(signupOtp.trim())) {
+      setErrorMessage("Enter the 6-digit code from your email.");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setErrorMessage("");
+      await onVerify(signupOtp);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleResend = async () => {
+    try {
+      setSubmitting(true);
+      setErrorMessage("");
+      await onResend();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <View style={{ gap: 16 }}>
+      <View style={styles.verificationNotice}>
+        <Text style={styles.verificationTitle}>
+          Check your inbox
+        </Text>
+
+        <Text style={styles.verificationCopy}>
+          Enter the 6-digit code sent to {email}.
+        </Text>
+      </View>
+
+      <AppTextField
+        label="Verification code"
+        placeholder="Enter 6-digit code"
+        keyboardType="number-pad"
+        maxLength={6}
+        value={signupOtp}
+        onChangeText={(value) =>
+          setSignupOtp(value.replace(/\D/g, "").slice(0, 6))
+        }
+      />
+
+      {errorMessage ? (
+        <Text style={styles.verificationError}>{errorMessage}</Text>
+      ) : null}
+
+      <TouchableOpacity
+        onPress={handleVerify}
+        disabled={disabled}
+        style={[styles.primaryButton, disabled && styles.primaryButtonDisabled]}
+      >
+        <Text style={styles.primaryButtonText}>
+          {submitting ? "Verifying..." : "Verify and create account"}
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={handleResend}
+        disabled={disabled}
+        style={styles.secondaryButton}
+      >
+        <Text style={styles.secondaryButtonText}>Send a new code</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+export function AuthForm({
   email,
   password,
   confirmPassword,
@@ -31,7 +132,11 @@ export default function AuthForm({
   onToggleMode,
   onGoogleSignIn,
   googleDisabled,
+  loading = false,
+  signupOtpSentTo,
 }: AuthFormProps) {
+  const isAwaitingOtp = isSignup && Boolean(signupOtpSentTo);
+
   return (
     <View style={styles.card}>
       <View style={styles.form}>
@@ -62,9 +167,19 @@ export default function AuthForm({
           />
         ) : null}
 
-        <TouchableOpacity onPress={onSubmit} style={styles.primaryButton}>
+        <TouchableOpacity
+          onPress={onSubmit}
+          disabled={loading}
+          style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
+        >
           <Text style={styles.primaryButtonText}>
-            {isSignup ? "Create account" : "Sign in"}
+            {loading
+              ? "Please wait..."
+              : isAwaitingOtp
+                ? "Verify and create account"
+                : isSignup
+                  ? "Send verification code"
+                  : "Sign in"}
           </Text>
         </TouchableOpacity>
 

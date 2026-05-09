@@ -5,6 +5,7 @@ import { mountCoachRoutes } from "./coach/routes.js";
 import { generatePlateFoodVisionResponse } from "./coach/geminiClient.js";
 import { mountFormAnalysisRoutes } from "./formAnalysis/routes.js";
 import { mountHomeRoutes } from "./home/routes.js";
+import { mountEmailOtpRoutes } from "./auth/emailOtp.js";
 
 dotenv.config();
 
@@ -1236,6 +1237,7 @@ app.post("/api/foods/plate/analyze", async (req, res) => {
 mountCoachRoutes(app);
 mountHomeRoutes(app);
 mountFormAnalysisRoutes(app);
+mountEmailOtpRoutes(app);
 
 app.listen(PORT, () => {
   console.log(`Nutrition proxy running on port ${PORT}`);

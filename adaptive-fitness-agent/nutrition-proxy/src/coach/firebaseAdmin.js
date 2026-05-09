@@ -55,11 +55,15 @@ export function getCoachFirestore() {
   return getFirestore(getOrCreateAdminApp());
 }
 
+export function getCoachAuth() {
+  return getAuth(getOrCreateAdminApp());
+}
+
 export async function verifyCoachIdToken(idToken) {
   if (!idToken || typeof idToken !== "string") {
     throw new Error("auth-token-missing");
   }
 
-  const auth = getAuth(getOrCreateAdminApp());
+  const auth = getCoachAuth();
   return auth.verifyIdToken(idToken);
 }

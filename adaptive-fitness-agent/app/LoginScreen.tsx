@@ -7,7 +7,6 @@ import {
   View,
   Image,
 } from "react-native";
-import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Pizza,
@@ -18,10 +17,10 @@ import {
   Footprints,
 } from "lucide-react-native";
 import {
-  createUserWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithCredential,
   signInWithEmailAndPassword,
+  signOut,
 } from "firebase/auth/react-native";
 import {
   GoogleSignin,
@@ -30,10 +29,11 @@ import {
 } from "@react-native-google-signin/google-signin";
 import { appTheme } from "../theme/designSystem";
 import { auth } from "../services/firebase";
-import AuthForm from "../components/AuthForm";
+import { AuthForm, OtpVerificationContent } from "../components/AuthForm";
 import { getUserFriendlyErrorMessage, useAppAlert } from "../components/ui/AppAlert";
 import { styles } from "./LoginScreen.styles";
 import { configureGoogleSignIn } from "../services/googleSignin";
+import { requestSignupOtp, verifySignupOtp } from "../services/signupVerification";
 
 type Capability = {
   Icon: React.ComponentType<{ color?: string; size?: number; strokeWidth?: number }>;
@@ -104,9 +104,11 @@ export default function LoginScreen() {
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [confirmPassword, setConfirmPassword] = useState<string>("");
+  const [signupVerificationId, setSignupVerificationId] = useState<string>("");
+  const [signupOtpSentTo, setSignupOtpSentTo] = useState<string>("");
   const [isSignup, setIsSignup] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
-  const { showAlert } = useAppAlert();
+  const { showAlert, hideAlert } = useAppAlert();
   const scrollRef = useRef<ScrollView>(null);
   const entrance = useRef(new Animated.Value(0)).current;
   const breath = useRef(new Animated.Value(0)).current;
@@ -165,9 +167,56 @@ export default function LoginScreen() {
     ],
   };
 
-  const scrollToAuth = (signup: boolean) => {
-    setIsSignup(signup);
-    scrollRef.current?.scrollToEnd({ animated: true });
+  const resetSignupVerification = () => {
+    setSignupVerificationId("");
+    setSignupOtpSentTo("");
+  };
+
+  const handleChangeEmail = (value: string) => {
+    setEmail(value);
+    resetSignupVerification();
+  };
+
+  const handleVerifySignupOtp = async (otp: string, verificationId: string) => {
+    const cleanedOtp = otp.trim();
+
+    if (!/^\d{6}$/.test(cleanedOtp)) {
+      throw new Error("Please enter the 6-digit verification code from your email.");
+    }
+
+    await verifySignupOtp({
+      email: email.trim(),
+      password,
+      otp: cleanedOtp,
+      verificationId,
+    });
+    await signInWithEmailAndPassword(auth, email.trim(), password);
+    resetSignupVerification();
+    hideAlert();
+  };
+
+  const showSignupVerificationAlert = (targetEmail: string, verificationId: string) => {
+    showAlert({
+      title: "Verification required",
+      dismissible: false,
+      actions: [],
+      content: (
+        <OtpVerificationContent
+          email={targetEmail}
+          loading={loading}
+          onResend={handleResendSignupOtp}
+          onVerify={(otp) => handleVerifySignupOtp(otp, verificationId)}
+        />
+      ),
+    });
+  };
+
+  const sendSignupOtp = async () => {
+    const trimmedEmail = email.trim();
+    const response = await requestSignupOtp(trimmedEmail);
+    setSignupVerificationId(response.verificationId);
+    setSignupOtpSentTo(response.email);
+    showSignupVerificationAlert(response.email, response.verificationId);
   };
 
   const handleAuth = async () => {
@@ -192,22 +241,64 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       if (isSignup) {
-        await createUserWithEmailAndPassword(auth, email.trim(), password);
+        if (!signupVerificationId) {
+          await sendSignupOtp();
+          return;
+        }
+
+        showSignupVerificationAlert(signupOtpSentTo || email.trim(), signupVerificationId);
       } else {
-        await signInWithEmailAndPassword(auth, email.trim(), password);
+        const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+        if (!credential.user.emailVerified) {
+          await signOut(auth);
+          showAlert({
+            title: "Email not verified",
+            message:
+              "Please create your account through the verification code flow before signing in.",
+          });
+        }
       }
-    } catch (error) {
-      const message = getUserFriendlyErrorMessage(
-        error,
-        isSignup
-          ? "We couldn't create your account right now. Please try again."
-          : "We couldn't sign you in right now. Please try again.",
-      );
+    } catch (error: any) {
+      const message =
+        typeof error === "string"
+          ? error
+          : error?.message ||
+          JSON.stringify(error) ||
+          getUserFriendlyErrorMessage(
+            error,
+            isSignup
+              ? "We couldn't create your account right now. Please try again."
+              : "We couldn't sign you in right now. Please try again.",
+          );
 
       showAlert({
         title: isSignup ? "Couldn't create account" : "Couldn't sign in",
         message,
       });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendSignupOtp = async () => {
+    if (!email.trim()) {
+      showAlert({
+        title: "Email missing",
+        message: "Enter your email before requesting a new code.",
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await sendSignupOtp();
+    } catch (error) {
+      const message = getUserFriendlyErrorMessage(
+        error,
+        "We couldn't send a new verification code right now.",
+      );
+
+      throw new Error(message);
     } finally {
       setLoading(false);
     }
@@ -251,7 +342,7 @@ export default function LoginScreen() {
         }
       }
 
-            const message = getUserFriendlyErrorMessage(
+      const message = getUserFriendlyErrorMessage(
         error,
         "Google sign-in didn't complete. Please try again.",
       );
@@ -326,7 +417,7 @@ export default function LoginScreen() {
             password={password}
             confirmPassword={confirmPassword}
             isSignup={isSignup}
-            onChangeEmail={setEmail}
+            onChangeEmail={handleChangeEmail}
             onChangePassword={setPassword}
             onChangeConfirmPassword={setConfirmPassword}
             onSubmit={handleAuth}
@@ -334,9 +425,12 @@ export default function LoginScreen() {
               setIsSignup((prev) => !prev);
               setPassword("");
               setConfirmPassword("");
+              resetSignupVerification();
             }}
             onGoogleSignIn={handleGoogleSignIn}
             googleDisabled={loading}
+            loading={loading}
+            signupOtpSentTo={signupOtpSentTo}
           />
         </View>
       </ScrollView>

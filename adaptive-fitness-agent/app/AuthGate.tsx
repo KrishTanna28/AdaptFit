@@ -1,12 +1,14 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { signOut } from "firebase/auth/react-native";
 
 import HomeTabs from "./HomeTabs";
 import LoginScreen from "./LoginScreen";
 import PasswordSetupScreen from "./PasswordSetupScreen";
 import { useAuthUser } from "../hooks/useAuthUser";
-import { needsPasswordSetup } from "../utils/authRouting";
+import { needsEmailVerification, needsPasswordSetup } from "../utils/authRouting";
+import { auth } from "../services/firebase";
 import { appTheme } from "../theme/designSystem";
 import { styles } from "../App.styles";
 
@@ -20,6 +22,13 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function AuthGate() {
   const { user, loading } = useAuthUser();
+  const emailVerificationRequired = needsEmailVerification(user);
+
+  useEffect(() => {
+    if (emailVerificationRequired) {
+      signOut(auth).catch(() => {});
+    }
+  }, [emailVerificationRequired]);
 
   if (loading) {
     return (
@@ -29,7 +38,7 @@ export default function AuthGate() {
     );
   }
 
-  const routeState = !user
+  const routeState = !user || emailVerificationRequired
     ? "guest"
     : needsPasswordSetup(user)
       ? "password-setup"
@@ -38,10 +47,10 @@ export default function AuthGate() {
   return (
     <Stack.Navigator
       key={routeState}
-      initialRouteName={!user ? "Login" : needsPasswordSetup(user) ? "PasswordSetup" : "Home"}
+      initialRouteName={!user || emailVerificationRequired ? "Login" : needsPasswordSetup(user) ? "PasswordSetup" : "Home"}
       screenOptions={{ headerShown: false }}
     >
-      {!user ? (
+      {!user || emailVerificationRequired ? (
         <Stack.Screen name="Login" component={LoginScreen} />
       ) : (
         <>

@@ -21,6 +21,7 @@ export type AppAlertAction = {
 export type AppAlertOptions = {
   title: string;
   message?: string;
+  content?: ReactNode;
   actions?: AppAlertAction[];
   dismissible?: boolean;
 };
@@ -37,6 +38,7 @@ type AppAlertProviderProps = {
 type StoredAlert = {
   title: string;
   message?: string;
+  content?: ReactNode;
   actions: AppAlertAction[];
   dismissible: boolean;
 };
@@ -47,68 +49,68 @@ const friendlyErrorMap: Array<{
   match: RegExp;
   message: string;
 }> = [
-  {
-    match: /invalid-credential|wrong-password|user-not-found|invalid-login-credentials/i,
-    message: "That email or password doesn't look right. Please try again.",
-  },
-  {
-    match: /email-already-in-use/i,
-    message: "That email is already being used. Try logging in instead.",
-  },
-  {
-    match: /invalid-email/i,
-    message: "Please enter a valid email address.",
-  },
-  {
-    match: /weak-password/i,
-    message: "Please choose a stronger password with at least 6 characters.",
-  },
-  {
-    match: /network-request-failed|network error|timeout/i,
-    message: "We couldn't connect right now. Please check your internet and try again.",
-  },
-  {
-    match: /too-many-requests/i,
-    message: "Too many attempts were made. Please wait a moment and try again.",
-  },
-  {
-    match:
-      /denied access|permission[_\s-]?denied|contact support|forbidden|status:\s*403|api has not been used|disabled/i,
-    message:
-      "This AI provider project is blocked. Verify Vertex IAM permissions and billing for the configured service account.",
-  },
-  {
-    match:
-      /unable to authenticate your request|vertex-sdk-api-key-not-supported|no credentials|could not refresh access token/i,
-    message:
-      "AI provider authentication failed. In nutrition-proxy/.env, set VERTEX_PROJECT_ID, VERTEX_CLIENT_EMAIL, and VERTEX_PRIVATE_KEY (or FIREBASE_* as fallback), or configure GOOGLE_APPLICATION_CREDENTIALS.",
-  },
-  {
-    match: /play services/i,
-    message: "Google Play Services is not available on this device right now.",
-  },
-  {
-    match: /sign_in_cancelled|cancelled|canceled/i,
-    message: "The sign-in was cancelled before it finished.",
-  },
-  {
-    match: /provider-already-linked/i,
-    message: "This account already has email and password sign-in enabled.",
-  },
-  {
-    match: /credential-already-in-use/i,
-    message: "That sign-in method is already connected to another account.",
-  },
-  {
-    match: /requires-recent-login/i,
-    message: "For security, please confirm your Google account again and retry.",
-  },
-  {
-    match: /operation-not-allowed|admin-restricted-operation/i,
-    message:
-      "Email and password sign-in is not enabled for this project yet. Please enable it in Firebase Authentication.",
-  },
-];
+    {
+      match: /invalid-credential|wrong-password|user-not-found|invalid-login-credentials/i,
+      message: "That email or password doesn't look right. Please try again.",
+    },
+    {
+      match: /email-already-in-use/i,
+      message: "That email is already being used. Try logging in instead.",
+    },
+    {
+      match: /invalid-email/i,
+      message: "Please enter a valid email address.",
+    },
+    {
+      match: /weak-password/i,
+      message: "Please choose a stronger password with at least 6 characters.",
+    },
+    {
+      match: /network-request-failed|network error|timeout/i,
+      message: "We couldn't connect right now. Please check your internet and try again.",
+    },
+    {
+      match: /too-many-requests/i,
+      message: "Too many attempts were made. Please wait a moment and try again.",
+    },
+    {
+      match:
+        /denied access|permission[_\s-]?denied|contact support|forbidden|status:\s*403|api has not been used|disabled/i,
+      message:
+        "This AI provider project is blocked. Verify Vertex IAM permissions and billing for the configured service account.",
+    },
+    {
+      match:
+        /unable to authenticate your request|vertex-sdk-api-key-not-supported|no credentials|could not refresh access token/i,
+      message:
+        "AI provider authentication failed. In nutrition-proxy/.env, set VERTEX_PROJECT_ID, VERTEX_CLIENT_EMAIL, and VERTEX_PRIVATE_KEY (or FIREBASE_* as fallback), or configure GOOGLE_APPLICATION_CREDENTIALS.",
+    },
+    {
+      match: /play services/i,
+      message: "Google Play Services is not available on this device right now.",
+    },
+    {
+      match: /sign_in_cancelled|cancelled|canceled/i,
+      message: "The sign-in was cancelled before it finished.",
+    },
+    {
+      match: /provider-already-linked/i,
+      message: "This account already has email and password sign-in enabled.",
+    },
+    {
+      match: /credential-already-in-use/i,
+      message: "That sign-in method is already connected to another account.",
+    },
+    {
+      match: /requires-recent-login/i,
+      message: "For security, please confirm your Google account again and retry.",
+    },
+    {
+      match: /operation-not-allowed|admin-restricted-operation/i,
+      message:
+        "Email and password sign-in is not enabled for this project yet. Please enable it in Firebase Authentication.",
+    },
+  ];
 
 export function getUserFriendlyErrorMessage(
   error: unknown,
@@ -117,8 +119,8 @@ export function getUserFriendlyErrorMessage(
   const rawText =
     typeof error === "object" && error !== null
       ? `${String((error as { code?: string }).code ?? "")} ${String(
-          (error as { message?: string }).message ?? "",
-        )}`.trim()
+        (error as { message?: string }).message ?? "",
+      )}`.trim()
       : typeof error === "string"
         ? error
         : "";
@@ -138,10 +140,11 @@ export function AppAlertProvider({ children }: AppAlertProviderProps) {
     setAlert({
       title: options.title,
       message: options.message,
+      content: options.content,
       actions:
-        options.actions && options.actions.length > 0
-          ? options.actions.slice(0, 2)
-          : [{ label: "Okay", style: "primary" }],
+        options.actions === undefined
+          ? [{ label: "Okay", style: "primary" }]
+          : options.actions.slice(0, 2),
       dismissible: options.dismissible ?? true,
     });
   };
@@ -181,24 +184,30 @@ export function AppAlertProvider({ children }: AppAlertProviderProps) {
 
                 <Text style={styles.title}>{alert.title}</Text>
 
-                {alert.message ? (
-                  <Text style={styles.message}>{alert.message}</Text>
+                {alert.content ? (
+                  alert.content
+                ) : alert.message ? (
+                  <Text style={styles.message}>
+                    {alert.message}
+                  </Text>
                 ) : null}
 
-                <View style={styles.actionsRow}>
-                  {alert.actions.map((action) => {
-                    const isPrimary = (action.style ?? "primary") === "primary";
+                {alert.actions.length > 0 ? (
+                  <View style={styles.actionsRow}>
+                    {alert.actions.map((action) => {
+                      const isPrimary = (action.style ?? "primary") === "primary";
 
-                    return (
-                      <AppButton
-                        key={action.label}
-                        title={action.label}
-                        onPress={() => handleActionPress(action)}
-                        variant={isPrimary ? "primary" : "secondary"}
-                      />
-                    );
-                  })}
-                </View>
+                      return (
+                        <AppButton
+                          key={action.label}
+                          title={action.label}
+                          onPress={() => handleActionPress(action)}
+                          variant={isPrimary ? "primary" : "secondary"}
+                        />
+                      );
+                    })}
+                  </View>
+                ) : null}
               </View>
             </View>
           ) : null}

@@ -37,10 +37,47 @@ export const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: appTheme.spacing.lg,
   },
+  primaryButtonDisabled: {
+    opacity: 0.55,
+  },
   primaryButtonText: {
     color: appTheme.colors.onPrimary,
     fontSize: 15,
     fontWeight: "600",
+  },
+  secondaryButton: {
+    minHeight: 42,
+    borderRadius: appTheme.radii.pill,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: appTheme.spacing.md,
+  },
+  secondaryButtonText: {
+    color: appTheme.colors.primary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  verificationNotice: {
+    gap: appTheme.spacing.xs,
+    padding: appTheme.spacing.lg,
+    borderRadius: appTheme.radii.md,
+    backgroundColor: appTheme.colors.cardTinted,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+  },
+  verificationTitle: {
+    ...appTheme.typography.headingSmall,
+    color: appTheme.colors.textPrimary,
+  },
+  verificationCopy: {
+    ...appTheme.typography.bodySmall,
+    color: appTheme.colors.textSecondary,
+  },
+  verificationError: {
+    ...appTheme.typography.bodySmall,
+    color: appTheme.colors.danger,
   },
   switchButton: {
     alignItems: "center",
