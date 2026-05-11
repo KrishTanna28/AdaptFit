@@ -5,19 +5,23 @@ export const styles = StyleSheet.create({
   card: {
     width: "100%",
     backgroundColor: appTheme.colors.card,
-    borderRadius: appTheme.radii.lg,
-    padding: appTheme.spacing.xl,
-    ...appTheme.shadows.card,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    padding: 24,
   },
   form: {
-    gap: appTheme.spacing.lg,
+    gap: 16,
   },
   fieldGroup: {
     gap: appTheme.spacing.sm,
   },
   label: {
-    ...appTheme.typography.label,
     color: appTheme.colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
   },
   input: {
     minHeight: appTheme.sizes.inputMinHeight,
@@ -29,94 +33,123 @@ export const styles = StyleSheet.create({
     color: appTheme.colors.textPrimary,
     ...appTheme.typography.bodyLarge,
   },
+
+  // Primary action
   primaryButton: {
     minHeight: appTheme.sizes.buttonMinHeight,
     backgroundColor: appTheme.colors.primary,
-    borderRadius: appTheme.radii.pill,
+    borderRadius: 99,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: appTheme.spacing.lg,
   },
   primaryButtonDisabled: {
-    opacity: 0.55,
+    opacity: 0.5,
   },
   primaryButtonText: {
     color: appTheme.colors.onPrimary,
     fontSize: 15,
-    fontWeight: "600",
+    fontWeight: "700",
+    letterSpacing: 0.1,
   },
+
+  // Secondary action (resend code etc.)
   secondaryButton: {
-    minHeight: 42,
-    borderRadius: appTheme.radii.pill,
+    minHeight: 44,
+    borderRadius: 99,
     borderWidth: 1,
     borderColor: appTheme.colors.border,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: appTheme.spacing.md,
   },
   secondaryButtonText: {
-    color: appTheme.colors.primary,
+    color: appTheme.colors.textSecondary,
     fontSize: 14,
     fontWeight: "600",
   },
+
+  // OTP notice box
   verificationNotice: {
-    gap: appTheme.spacing.xs,
-    padding: appTheme.spacing.lg,
-    borderRadius: appTheme.radii.md,
+    gap: 6,
+    padding: 16,
+    borderRadius: 16,
     backgroundColor: appTheme.colors.cardTinted,
     borderWidth: 1,
     borderColor: appTheme.colors.border,
   },
   verificationTitle: {
-    ...appTheme.typography.headingSmall,
     color: appTheme.colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "700",
   },
   verificationCopy: {
-    ...appTheme.typography.bodySmall,
     color: appTheme.colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 19,
   },
   verificationError: {
-    ...appTheme.typography.bodySmall,
     color: appTheme.colors.danger,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: -4,
   },
+
+  // Mode toggle row
   switchButton: {
     alignItems: "center",
     paddingVertical: appTheme.spacing.xs,
-  },
-  switchText: {
-    ...appTheme.typography.bodySmall,
-    color: appTheme.colors.textSecondary,
-    textAlign: "center",
   },
   switchContainer: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
   },
+  switchText: {
+    color: appTheme.colors.textSecondary,
+    fontSize: 13,
+  },
   switchButtonText: {
     color: appTheme.colors.primary,
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: 13,
+    fontWeight: "700",
   },
+
+  // Divider
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: appTheme.colors.border,
+  },
+  dividerText: {
+    color: appTheme.colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+  },
+
+  // Google sign-in
   googleButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     minHeight: appTheme.sizes.buttonMinHeight,
-    backgroundColor: appTheme.colors.card,
-    borderRadius: appTheme.radii.pill,
-    borderWidth: 1.5,
+    backgroundColor: appTheme.colors.background,
+    borderRadius: 99,
+    borderWidth: 1,
     borderColor: appTheme.colors.border,
-    paddingVertical: appTheme.spacing.lg,
-    opacity: 1,
+    gap: 10,
   },
   googleButtonDisabled: {
-    opacity: 0.45,
+    opacity: 0.4,
   },
   googleButtonText: {
-    marginLeft: appTheme.spacing.sm,
-    ...appTheme.typography.bodyLarge,
     color: appTheme.colors.textPrimary,
+    fontSize: 15,
     fontWeight: "600",
   },
 });

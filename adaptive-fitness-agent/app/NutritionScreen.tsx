@@ -13,6 +13,7 @@ import NutritionScreenModal, {
 } from "./NutritionScreenModal";
 
 import AppCard from "../components/ui/AppCard";
+import AppSkeleton from "../components/ui/AppSkeleton";
 import {
   getUserFriendlyErrorMessage,
   useAppAlert,
@@ -395,6 +396,7 @@ export default function NutritionScreen() {
   );
   const [plateDraft, setPlateDraft] = useState<PlateCaptureDraft>(initialPlateCaptureDraft);
   const [barcodeDraft, setBarcodeDraft] = useState<BarcodeScannerDraft>(initialBarcodeScannerDraft);
+  const isLogLoading = authLoading || isLoadingLog;
 
   const {
     isModalVisible,
@@ -1172,52 +1174,92 @@ export default function NutritionScreen() {
 
             <View style={styles.macroGrid}>
               <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{Math.round(totals.calories)} kcal</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="70%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.macroValue}>{Math.round(totals.calories)} kcal</Text>
+                )}
                 <Text style={styles.macroLabel}>Calories</Text>
               </View>
 
               <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{roundOne(totals.protein)} g</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="64%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.macroValue}>{roundOne(totals.protein)} g</Text>
+                )}
                 <Text style={styles.macroLabel}>Protein</Text>
               </View>
 
               <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{roundOne(totals.carbs)} g</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="64%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.macroValue}>{roundOne(totals.carbs)} g</Text>
+                )}
                 <Text style={styles.macroLabel}>Carbs</Text>
               </View>
 
               <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{roundOne(totals.fat)} g</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="58%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.macroValue}>{roundOne(totals.fat)} g</Text>
+                )}
                 <Text style={styles.macroLabel}>Fat</Text>
               </View>
 
               <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{roundOne(totals.fiber)} g</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="58%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.macroValue}>{roundOne(totals.fiber)} g</Text>
+                )}
                 <Text style={styles.macroLabel}>Fibre</Text>
               </View>
 
               <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{Math.round(totals.sodiumMg)} mg</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="68%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.macroValue}>{Math.round(totals.sodiumMg)} mg</Text>
+                )}
                 <Text style={styles.macroLabel}>Sodium</Text>
               </View>
 
               <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{Math.round(totals.potassiumMg)} mg</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="68%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.macroValue}>{Math.round(totals.potassiumMg)} mg</Text>
+                )}
                 <Text style={styles.macroLabel}>Potassium</Text>
               </View>
 
               <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{Math.round(totals.calciumMg)} mg</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="68%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.macroValue}>{Math.round(totals.calciumMg)} mg</Text>
+                )}
                 <Text style={styles.macroLabel}>Calcium</Text>
               </View>
 
               <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{roundOne(totals.ironMg)} mg</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="62%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.macroValue}>{roundOne(totals.ironMg)} mg</Text>
+                )}
                 <Text style={styles.macroLabel}>Iron</Text>
               </View>
 
               <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{roundOne(totals.vitaminCMg)} mg</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="68%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.macroValue}>{roundOne(totals.vitaminCMg)} mg</Text>
+                )}
                 <Text style={styles.macroLabel}>Vitamin C</Text>
               </View>
             </View>
@@ -1266,7 +1308,22 @@ export default function NutritionScreen() {
                   ) : null}
                 </View>
 
-                {mealEntries.length === 0 ? (
+                {isLogLoading ? (
+                  <View style={styles.entriesList}>
+                    {[0, 1].map((index) => (
+                      <View key={index} style={styles.entryRow}>
+                        <View style={styles.entryLeft}>
+                          <AppSkeleton width="72%" height={14} borderRadius={6} />
+                          <AppSkeleton width="44%" height={12} borderRadius={6} />
+                        </View>
+                        <View style={styles.entryRight}>
+                          <AppSkeleton width={56} height={14} borderRadius={6} />
+                          <AppSkeleton width={96} height={10} borderRadius={6} />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : mealEntries.length === 0 ? (
                   <Text style={styles.emptyText}>No entries yet.</Text>
                 ) : (
                   <View style={styles.entriesList}>
@@ -1295,11 +1352,6 @@ export default function NutritionScreen() {
             );
           })}
 
-          {authLoading || isLoadingLog ? (
-            <AppCard style={styles.sectionCard}>
-              <Text style={styles.emptyText}>Loading nutrition log...</Text>
-            </AppCard>
-          ) : null}
         </View>
       </ScrollView>
       <DatePickerModal

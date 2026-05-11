@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 
 import AppButton from "../components/ui/AppButton";
+import AppSkeleton from "../components/ui/AppSkeleton";
 import AppTextField from "../components/ui/AppTextField";
 import { styles } from "./ProfileEditModal.styles";
 import {
@@ -142,7 +143,9 @@ export default function ProfileEditModal({
               </Pressable>
             </View>
 
-            {isLoading ? <Text style={styles.loadingText}>Loading profile...</Text> : null}
+            {isLoading ? (
+              <AppSkeleton width="62%" height={12} borderRadius={6} variant="default" />
+            ) : null}
 
             <AppTextField
               label="Name"

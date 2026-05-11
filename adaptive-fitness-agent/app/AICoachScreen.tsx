@@ -31,6 +31,7 @@ import {
 import { doc, getDoc } from "firebase/firestore";
 import { useFocusEffect } from "@react-navigation/native";
 import AppButton from "../components/ui/AppButton";
+import AppSkeleton from "../components/ui/AppSkeleton";
 import { getUserFriendlyErrorMessage, useAppAlert } from "../components/ui/AppAlert";
 import { useAuthUser } from "../hooks/useAuthUser";
 import {
@@ -1109,9 +1110,13 @@ export default function AICoachScreen() {
           </Pressable>
 
           {isLoadingConversations ? (
-            <View style={styles.sidebarState}>
-              <ActivityIndicator size="small" color={appTheme.colors.primary} />
-              <Text style={styles.sidebarStateText}>Loading saved chats...</Text>
+            <View style={styles.sidebarSkeletonList}>
+              {[0, 1, 2].map((index) => (
+                <View key={index} style={styles.sidebarSkeletonItem}>
+                  <AppSkeleton width="72%" height={16} borderRadius={8} variant="activity" />
+                  <AppSkeleton width="92%" height={12} borderRadius={8} variant="activity" />
+                </View>
+              ))}
             </View>
           ) : conversationListError ? (
             <View style={styles.sidebarState}>

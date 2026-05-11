@@ -6,6 +6,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { useFocusEffect } from "@react-navigation/native";
 
 import AppCard from "../components/ui/AppCard";
+import AppSkeleton from "../components/ui/AppSkeleton";
 import {
   getUserFriendlyErrorMessage,
   useAppAlert,
@@ -215,6 +216,7 @@ export default function WorkoutScreen() {
 
   const [entries, setEntries] = useState<LoggedWorkoutEntry[]>([]);
   const [isLoadingLog, setIsLoadingLog] = useState(true);
+  const isLogLoading = isLoadingLog;
 
   const dailyWorkoutCaloriesBurned = useMemo(() => {
     return Math.round(
@@ -825,17 +827,29 @@ export default function WorkoutScreen() {
 
             <View style={styles.totalsGrid}>
               <View style={styles.totalItem}>
-                <Text style={styles.totalValue}>{dailyWorkoutCaloriesBurned} kcal</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="70%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.totalValue}>{dailyWorkoutCaloriesBurned} kcal</Text>
+                )}
                 <Text style={styles.totalLabel}>Calories burned</Text>
               </View>
 
               <View style={[styles.totalItem, styles.totalItemDivider]}>
-                <Text style={styles.totalValue}>{entries.length}</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="42%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.totalValue}>{entries.length}</Text>
+                )}
                 <Text style={styles.totalLabel}>Workouts</Text>
               </View>
 
               <View style={[styles.totalItem, styles.totalItemDivider]}>
-                <Text style={styles.totalValue}>{Math.round(totalWorkoutDurationMin)} min</Text>
+                {isLogLoading ? (
+                  <AppSkeleton width="60%" height={18} borderRadius={8} />
+                ) : (
+                  <Text style={styles.totalValue}>{Math.round(totalWorkoutDurationMin)} min</Text>
+                )}
                 <Text style={styles.totalLabel}>Duration</Text>
               </View>
             </View>
@@ -863,7 +877,19 @@ export default function WorkoutScreen() {
             {!user?.uid ? (
               <Text style={styles.emptyText}>Sign in to view and add workouts.</Text>
             ) : isLoadingLog ? (
-              <Text style={styles.emptyText}>Loading workouts...</Text>
+              <View style={styles.entriesList}>
+                {[0, 1].map((index) => (
+                  <View key={index} style={styles.entryRow}>
+                    <View style={styles.entryLeft}>
+                      <AppSkeleton width="70%" height={14} borderRadius={6} />
+                      <AppSkeleton width="52%" height={12} borderRadius={6} />
+                    </View>
+                    <View style={styles.entryRight}>
+                      <AppSkeleton width={58} height={14} borderRadius={6} />
+                    </View>
+                  </View>
+                ))}
+              </View>
             ) : entries.length === 0 ? (
               <Text style={styles.emptyText}>No workouts logged for this day.</Text>
             ) : (

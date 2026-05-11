@@ -420,6 +420,19 @@ export const styles = StyleSheet.create({
     gap: appTheme.spacing.md,
     paddingHorizontal: appTheme.spacing.md,
   },
+  sidebarSkeletonList: {
+    flex: 1,
+    gap: appTheme.spacing.sm,
+  },
+  sidebarSkeletonItem: {
+    borderRadius: appTheme.radii.md,
+    backgroundColor: appTheme.colors.card,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    paddingHorizontal: appTheme.spacing.md,
+    paddingVertical: appTheme.spacing.md,
+    gap: appTheme.spacing.xs,
+  },
   sidebarStateText: {
     ...appTheme.typography.bodySmall,
     color: appTheme.colors.textSecondary,

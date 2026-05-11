@@ -30,16 +30,30 @@ import {
 import { appTheme } from "../theme/designSystem";
 import { auth } from "../services/firebase";
 import { AuthForm, OtpVerificationContent } from "../components/AuthForm";
-import { getUserFriendlyErrorMessage, useAppAlert } from "../components/ui/AppAlert";
+import {
+  getUserFriendlyErrorMessage,
+  useAppAlert,
+} from "../components/ui/AppAlert";
 import { styles } from "./LoginScreen.styles";
 import { configureGoogleSignIn } from "../services/googleSignin";
-import { requestSignupOtp, verifySignupOtp } from "../services/signupVerification";
+import {
+  requestSignupOtp,
+  verifySignupOtp,
+} from "../services/signupVerification";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Capability = {
-  Icon: React.ComponentType<{ color?: string; size?: number; strokeWidth?: number }>;
+  Icon: React.ComponentType<{
+    color?: string;
+    size?: number;
+    strokeWidth?: number;
+  }>;
   title: string;
   copy: string;
 };
+
+// ─── Capability data ──────────────────────────────────────────────────────────
 
 const capabilities: Capability[] = [
   {
@@ -74,29 +88,126 @@ const capabilities: Capability[] = [
   },
 ];
 
+// ─── Hero logo ────────────────────────────────────────────────────────────────
+
 function HeroSystem() {
   return (
-    <View
-      style={[
-        styles.heroVisual,
-        {
-          justifyContent: "center",
-          alignItems: "center",
-        },
-      ]}
-      pointerEvents="none"
-    >
+    <View style={styles.heroVisual} pointerEvents="none">
       <Image
         source={require("../assets/logo svg.png")}
         resizeMode="contain"
-        style={{
-          width: 260,
-          height: 260,
-        }}
+        style={{ width: 220, height: 220 }}
       />
     </View>
   );
 }
+
+// ─── Capability grid — featured first row + 2-col pairs ───────────────────────
+
+function CapabilityGrid() {
+  const [featured, ...rest] = capabilities;
+
+  // Pair remaining items into rows of two
+  const pairs: Capability[][] = [];
+  for (let i = 0; i < rest.length; i += 2) {
+    pairs.push(rest.slice(i, i + 2));
+  }
+
+  return (
+    <View style={styles.capabilityGrid}>
+      {/* Featured card — full width, horizontal layout */}
+      <View style={styles.capabilityCardFeatured}>
+        <View style={styles.capabilityIcon}>
+          <featured.Icon
+            color={appTheme.colors.onPrimary}
+            size={18}
+            strokeWidth={2.2}
+          />
+        </View>
+        <View style={styles.capabilityCardFeaturedBody}>
+          <Text style={styles.capabilityTitle}>{featured.title}</Text>
+          <Text style={styles.capabilityCopy}>{featured.copy}</Text>
+        </View>
+      </View>
+
+      {/* Paired 2-col cards */}
+      {pairs.map((pair, rowIdx) => (
+        <View key={rowIdx} style={styles.capabilityRow}>
+          {pair.map(({ Icon, title, copy }) => (
+            <View key={title} style={styles.capabilityCard}>
+              <View style={styles.capabilityIcon}>
+                <Icon
+                  color={appTheme.colors.onPrimary}
+                  size={17}
+                  strokeWidth={2.2}
+                />
+              </View>
+              <Text style={styles.capabilityTitle}>{title}</Text>
+              <Text style={styles.capabilityCopy}>{copy}</Text>
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// ─── Aether panel ─────────────────────────────────────────────────────────────
+
+function AetherPanel() {
+  const contextTags = [
+    "Steps",
+    "Meals",
+    "Sleep",
+    "Hydration",
+    "Workouts",
+    "Recovery",
+  ];
+
+  return (
+    <View style={styles.coachPanel}>
+      {/* Header row — name + online status */}
+      <View style={styles.coachPanelHeader}>
+        <View style={styles.coachOrb}>
+          <BrainCircuit
+            color={appTheme.colors.primary}
+            size={20}
+            strokeWidth={2.2}
+          />
+        </View>
+        <View style={styles.coachOrbMeta}>
+          <Text style={styles.coachOrbName}>Aether</Text>
+          <View style={styles.coachOrbStatus}>
+            <View style={styles.coachOrbStatusDot} />
+            <Text style={styles.coachOrbStatusText}>Your AI coach · Always on</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Body */}
+      <View style={styles.coachPanelBody}>
+        <Text style={styles.coachTitle}>
+          Keeps the plan human, not just optimal.
+        </Text>
+        <Text style={styles.coachCopy}>
+          Aether reads your recent logs before every check-in — so advice
+          fits your actual week, not a template.
+        </Text>
+
+        {/* Context tags */}
+        <View style={styles.coachTagRow}>
+          {contextTags.map((tag) => (
+            <View key={tag} style={styles.coachTag}>
+              <Text style={styles.coachTagText}>{tag}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function LoginScreen() {
   const [email, setEmail] = useState<string>("");
@@ -109,7 +220,8 @@ export default function LoginScreen() {
   const { showAlert, hideAlert } = useAppAlert();
   const scrollRef = useRef<ScrollView>(null);
   const entrance = useRef(new Animated.Value(0)).current;
-  const breath = useRef(new Animated.Value(0)).current;
+
+  // ─── Entrance animation ──────────────────────────────────────────────────
 
   useEffect(() => {
     Animated.timing(entrance, {
@@ -118,52 +230,21 @@ export default function LoginScreen() {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
+  }, [entrance]);
 
-    const breathingLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(breath, {
-          toValue: 1,
-          duration: 4200,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(breath, {
-          toValue: 0,
-          duration: 4200,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-
-    breathingLoop.start();
-
-    return () => breathingLoop.stop();
-  }, [breath, entrance]);
-
-  const heroReveal = {
+  const fadeSlideUp = (delay = 0) => ({
     opacity: entrance,
     transform: [
       {
         translateY: entrance.interpolate({
           inputRange: [0, 1],
-          outputRange: [24, 0],
+          outputRange: [28, 0],
         }),
       },
     ],
-  };
+  });
 
-  const capabilityReveal = {
-    opacity: entrance,
-    transform: [
-      {
-        translateY: entrance.interpolate({
-          inputRange: [0, 1],
-          outputRange: [36, 0],
-        }),
-      },
-    ],
-  };
+  // ─── Auth helpers (unchanged logic) ──────────────────────────────────────
 
   const resetSignupVerification = () => {
     setSignupVerificationId("");
@@ -175,13 +256,16 @@ export default function LoginScreen() {
     resetSignupVerification();
   };
 
-  const handleVerifySignupOtp = async (otp: string, verificationId: string) => {
+  const handleVerifySignupOtp = async (
+    otp: string,
+    verificationId: string,
+  ) => {
     const cleanedOtp = otp.trim();
-
     if (!/^\d{6}$/.test(cleanedOtp)) {
-      throw new Error("Please enter the 6-digit verification code from your email.");
+      throw new Error(
+        "Please enter the 6-digit verification code from your email.",
+      );
     }
-
     await verifySignupOtp({
       email: email.trim(),
       password,
@@ -193,7 +277,10 @@ export default function LoginScreen() {
     hideAlert();
   };
 
-  const showSignupVerificationAlert = (targetEmail: string, verificationId: string) => {
+  const showSignupVerificationAlert = (
+    targetEmail: string,
+    verificationId: string,
+  ) => {
     showAlert({
       title: "Verification required",
       dismissible: false,
@@ -243,10 +330,16 @@ export default function LoginScreen() {
           await sendSignupOtp();
           return;
         }
-
-        showSignupVerificationAlert(signupOtpSentTo || email.trim(), signupVerificationId);
+        showSignupVerificationAlert(
+          signupOtpSentTo || email.trim(),
+          signupVerificationId,
+        );
       } else {
-        const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+        const credential = await signInWithEmailAndPassword(
+          auth,
+          email.trim(),
+          password,
+        );
         if (!credential.user.emailVerified) {
           await signOut(auth);
           showAlert({
@@ -261,14 +354,13 @@ export default function LoginScreen() {
         typeof error === "string"
           ? error
           : error?.message ||
-          JSON.stringify(error) ||
-          getUserFriendlyErrorMessage(
-            error,
-            isSignup
-              ? "We couldn't create your account right now. Please try again."
-              : "We couldn't sign you in right now. Please try again.",
-          );
-
+            JSON.stringify(error) ||
+            getUserFriendlyErrorMessage(
+              error,
+              isSignup
+                ? "We couldn't create your account right now. Please try again."
+                : "We couldn't sign you in right now. Please try again.",
+            );
       showAlert({
         title: isSignup ? "Couldn't create account" : "Couldn't sign in",
         message,
@@ -286,7 +378,6 @@ export default function LoginScreen() {
       });
       return;
     }
-
     setLoading(true);
     try {
       await sendSignupOtp();
@@ -295,7 +386,6 @@ export default function LoginScreen() {
         error,
         "We couldn't send a new verification code right now.",
       );
-
       throw new Error(message);
     } finally {
       setLoading(false);
@@ -306,54 +396,43 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       configureGoogleSignIn();
-
       await GoogleSignin.hasPlayServices();
-
       await GoogleSignin.signOut();
-
       const userInfo = await GoogleSignin.signIn();
-
-      if (!userInfo.data?.idToken) {
-        return;
-      }
-
+      if (!userInfo.data?.idToken) return;
       const credential = GoogleAuthProvider.credential(userInfo.data.idToken);
       await signInWithCredential(auth, credential);
     } catch (error) {
       if (isErrorWithCode(error)) {
-        if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-          return;
-        }
+        if (error.code === statusCodes.SIGN_IN_CANCELLED) return;
         if (error.code === statusCodes.IN_PROGRESS) {
           showAlert({
             title: "Google sign-in already running",
-            message: "Please wait for the current sign-in request to finish.",
+            message:
+              "Please wait for the current sign-in request to finish.",
           });
           return;
         }
         if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
           showAlert({
             title: "Google Play Services unavailable",
-            message: "Google Play Services is not available on this device right now.",
+            message:
+              "Google Play Services is not available on this device right now.",
           });
           return;
         }
       }
-
       const message = getUserFriendlyErrorMessage(
         error,
         "Google sign-in didn't complete. Please try again.",
       );
-
-      showAlert({
-        title: "Google sign-in failed",
-        message,
-      });
-
+      showAlert({ title: "Google sign-in failed", message });
     } finally {
       setLoading(false);
     }
   };
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -362,54 +441,47 @@ export default function LoginScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        <Animated.View style={[styles.heroSection, heroReveal]}>
+        {/* ── Hero ── */}
+        <Animated.View style={[styles.heroSection, fadeSlideUp()]}>
+          {/* Eyebrow */}
           <View style={styles.brandPill}>
+            <View style={styles.brandPillDot} />
             <Text style={styles.brandPillText}>AdaptFit</Text>
+            <View style={styles.brandPillDot} />
           </View>
 
-          <Text style={styles.title}>Start with Aether, then build the day around your logs.</Text>
-          <Text style={styles.subtitle}>
-            Your AI fitness companion brings workouts, steps, meals, hydration,
-            sleep, weather, and form checks into one calm routine.
-          </Text>
-
+          {/* Logo */}
           <HeroSystem />
+
+          {/* Headline */}
+          <Text style={styles.title}>
+            Your day, built around{"\n"}what you actually did.
+          </Text>
+          <Text style={styles.subtitle}>
+            Workouts, meals, sleep, steps, and an AI coach that reads all of it
+            before it speaks.
+          </Text>
         </Animated.View>
 
-        <Animated.View style={[styles.storySection, capabilityReveal]}>
+        {/* ── Capabilities ── */}
+        <Animated.View style={[styles.storySection, fadeSlideUp()]}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionEyebrow}>Personal ecosystem</Text>
+            <Text style={styles.sectionEyebrow}>What's inside</Text>
             <Text style={styles.sectionTitle}>
-              Everything here points back to what the app already tracks.
+              Every part of your routine, in one place.
             </Text>
           </View>
-
-          <View style={styles.capabilityGrid}>
-            {capabilities.map(({ Icon, title, copy }) => (
-              <View key={title} style={styles.capabilityCard}>
-                <View style={styles.capabilityIcon}>
-                  <Icon color={appTheme.colors.onPrimary} size={18} strokeWidth={2.2} />
-                </View>
-                <Text style={styles.capabilityTitle}>{title}</Text>
-                <Text style={styles.capabilityCopy}>{copy}</Text>
-              </View>
-            ))}
-          </View>
+          <CapabilityGrid />
         </Animated.View>
 
-        <View style={styles.coachPanel}>
-          <View style={styles.coachOrb}>
-            <BrainCircuit color={appTheme.colors.primary} size={22} strokeWidth={2.4} />
-          </View>
-          <Text style={styles.coachTitle}>Aether keeps the plan human.</Text>
-          <Text style={styles.coachCopy}>
-            Aether can use your recent steps, meals, workouts, hydration, and
-            recovery logs to offer a focused check-in when you need direction.
-          </Text>
-        </View>
+        {/* ── Aether panel ── */}
+        <Animated.View style={{ opacity: entrance }}>
+          <AetherPanel />
+        </Animated.View>
 
-        <View style={styles.authSection}>
-          <Text style={styles.authEyebrow}>Enter your wellness space</Text>
+        {/* ── Auth ── */}
+        <Animated.View style={[styles.authSection, fadeSlideUp()]}>
+          <Text style={styles.authEyebrow}>Get started</Text>
           <AuthForm
             email={email}
             password={password}
@@ -430,7 +502,7 @@ export default function LoginScreen() {
             loading={loading}
             signupOtpSentTo={signupOtpSentTo}
           />
-        </View>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );

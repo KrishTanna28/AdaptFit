@@ -645,19 +645,27 @@ export default function HomeScreen({
 
             <View style={styles.metricsGrid}>
               <View style={styles.metricItem}>
-                <Text style={styles.metricValue}>{stepCountText}</Text>
+                {liveStepCounter.isLoading ? (
+                  <AppSkeleton width={92} height={20} borderRadius={8} variant="home" />
+                ) : (
+                  <Text style={styles.metricValue}>{stepCountText}</Text>
+                )}
                 <Text style={styles.metricLabel}>Steps today</Text>
               </View>
               <View style={[styles.metricItem, styles.metricItemDivider]}>
-                <Text style={styles.metricValue}>
-                  {isLoadingCaloriesIntake ? 0 : totalCaloriesBurned} kcal
-                </Text>
+                {isLoadingCaloriesIntake ? (
+                  <AppSkeleton width={108} height={20} borderRadius={8} variant="home" />
+                ) : (
+                  <Text style={styles.metricValue}>{totalCaloriesBurned} kcal</Text>
+                )}
                 <Text style={styles.metricLabel}>Calories burned</Text>
               </View>
               <View style={[styles.metricItem, styles.metricItemDivider]}>
-                <Text style={styles.metricValue}>
-                  {isLoadingCaloriesIntake ? 0 : caloriesIntake}
-                </Text>
+                {isLoadingCaloriesIntake ? (
+                  <AppSkeleton width={76} height={20} borderRadius={8} variant="home" />
+                ) : (
+                  <Text style={styles.metricValue}>{caloriesIntake}</Text>
+                )}
                 <Text style={styles.metricLabel}>Calories consumed</Text>
               </View>
             </View>
@@ -669,16 +677,22 @@ export default function HomeScreen({
                 <BrainCircuit size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
               </View>
               <View style={styles.insightTextWrap}>
-                <Text style={styles.insightTitle}>
-                  {isLoadingHomeInsight
-                    ? "Aether is checking in"
-                    : homeInsight?.title || "Aether insight"}
-                </Text>
-                <Text style={styles.insightSummary}>
-                  {isLoadingHomeInsight
-                    ? "Reading your latest steps, meals, workouts, hydration, and recovery..."
-                    : homeInsight?.summary || homeInsightError || "Log today's activity to unlock a personalized insight."}
-                </Text>
+                {isLoadingHomeInsight ? (
+                  <>
+                    <AppSkeleton width="62%" height={16} borderRadius={8} variant="home" />
+                    <AppSkeleton width="100%" height={12} borderRadius={8} variant="home" />
+                    <AppSkeleton width="78%" height={12} borderRadius={8} variant="home" />
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.insightTitle}>
+                      {homeInsight?.title || "Aether insight"}
+                    </Text>
+                    <Text style={styles.insightSummary}>
+                      {homeInsight?.summary || homeInsightError || "Log today's activity to unlock a personalized insight."}
+                    </Text>
+                  </>
+                )}
               </View>
             </View>
 
@@ -718,12 +732,18 @@ export default function HomeScreen({
                   <Droplets size={16} color={appTheme.colors.accent} strokeWidth={2.2} />
                   <Text style={styles.lifestyleTitle}>Water</Text>
                 </View>
-                <Text style={styles.lifestyleValue}>
-                  {isLoadingLifestyle ? "--" : formatMl(currentWaterMl)}
-                </Text>
-                <Text style={styles.lifestyleMeta}>
-                  Goal {formatMl(hydrationGoal.goalMl)} · {String(hydrationProgressPercent)}%
-                </Text>
+                {isLoadingLifestyle ? (
+                  <AppSkeleton width={96} height={18} borderRadius={8} variant="home" />
+                ) : (
+                  <Text style={styles.lifestyleValue}>{formatMl(currentWaterMl)}</Text>
+                )}
+                {isLoadingLifestyle ? (
+                  <AppSkeleton width={140} height={12} borderRadius={6} variant="home" />
+                ) : (
+                  <Text style={styles.lifestyleMeta}>
+                    Goal {formatMl(hydrationGoal.goalMl)} · {String(hydrationProgressPercent)}%
+                  </Text>
+                )}
                 <View style={styles.progressTrack}>
                   <View style={[styles.progressFill, { width: hydrationProgressWidth }]} />
                 </View>
@@ -742,12 +762,16 @@ export default function HomeScreen({
                   <Moon size={16} color={appTheme.colors.primary} strokeWidth={2.2} />
                   <Text style={styles.lifestyleTitle}>Sleep</Text>
                 </View>
-                <Text style={styles.lifestyleValue}>
-                  {isLoadingLifestyle ? "Loading..." : sleepSummary}
-                </Text>
-                <Text style={styles.lifestyleMeta}>
-                  Quality {sleepQuality ?? "-"}
-                </Text>
+                {isLoadingLifestyle ? (
+                  <AppSkeleton width={88} height={18} borderRadius={8} variant="home" />
+                ) : (
+                  <Text style={styles.lifestyleValue}>{sleepSummary}</Text>
+                )}
+                {isLoadingLifestyle ? (
+                  <AppSkeleton width={90} height={12} borderRadius={6} variant="home" />
+                ) : (
+                  <Text style={styles.lifestyleMeta}>Quality {sleepQuality ?? "-"}</Text>
+                )}
                 <View style={styles.progressTrack}>
                   <View style={[styles.progressFill, { width: sleepProgressWidth }]} />
                 </View>

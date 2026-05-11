@@ -1,16 +1,14 @@
 import React, { useEffect } from "react";
-import { ActivityIndicator, View } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { signOut } from "firebase/auth/react-native";
 
 import HomeTabs from "./HomeTabs";
 import LoginScreen from "./LoginScreen";
 import PasswordSetupScreen from "./PasswordSetupScreen";
+import LogoSplash from "../components/ui/LogoSplash";
 import { useAuthUser } from "../hooks/useAuthUser";
 import { needsEmailVerification, needsPasswordSetup } from "../utils/authRouting";
 import { auth } from "../services/firebase";
-import { appTheme } from "../theme/designSystem";
-import { styles } from "../App.styles";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -31,11 +29,7 @@ export default function AuthGate() {
   }, [emailVerificationRequired]);
 
   if (loading) {
-    return (
-      <View style={styles.loaderScreen}>
-        <ActivityIndicator size="large" color={appTheme.colors.primary} />
-      </View>
-    );
+    return <LogoSplash />;
   }
 
   const routeState = !user || emailVerificationRequired
