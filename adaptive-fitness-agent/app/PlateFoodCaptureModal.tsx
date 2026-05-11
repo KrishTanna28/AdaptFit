@@ -90,6 +90,7 @@ export default function PlateFoodCaptureModal({
               value={totalWeightLabel}
               onChangeText={onChangeTotalWeight}
               keyboardType="decimal-pad"
+              editable={!isAnalyzing}
             />
 
             <Text style={styles.hintText}>

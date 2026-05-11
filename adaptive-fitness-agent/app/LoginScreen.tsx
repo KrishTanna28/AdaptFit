@@ -216,7 +216,8 @@ export default function LoginScreen() {
   const [signupVerificationId, setSignupVerificationId] = useState<string>("");
   const [signupOtpSentTo, setSignupOtpSentTo] = useState<string>("");
   const [isSignup, setIsSignup] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [authLoading, setAuthLoading] = useState<boolean>(false);
+  const [googleLoading, setGoogleLoading] = useState<boolean>(false);
   const { showAlert, hideAlert } = useAppAlert();
   const scrollRef = useRef<ScrollView>(null);
   const entrance = useRef(new Animated.Value(0)).current;
@@ -288,7 +289,7 @@ export default function LoginScreen() {
       content: (
         <OtpVerificationContent
           email={targetEmail}
-          loading={loading}
+          loading={authLoading}
           onResend={handleResendSignupOtp}
           onVerify={(otp) => handleVerifySignupOtp(otp, verificationId)}
         />
@@ -323,7 +324,7 @@ export default function LoginScreen() {
       return;
     }
 
-    setLoading(true);
+    setAuthLoading(true);
     try {
       if (isSignup) {
         if (!signupVerificationId) {
@@ -366,7 +367,7 @@ export default function LoginScreen() {
         message,
       });
     } finally {
-      setLoading(false);
+      setAuthLoading(false);
     }
   };
 
@@ -378,7 +379,7 @@ export default function LoginScreen() {
       });
       return;
     }
-    setLoading(true);
+    setAuthLoading(true);
     try {
       await sendSignupOtp();
     } catch (error) {
@@ -388,13 +389,17 @@ export default function LoginScreen() {
       );
       throw new Error(message);
     } finally {
-      setLoading(false);
+      setAuthLoading(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
+    if (authLoading || googleLoading) {
+      return;
+    }
+
     try {
-      setLoading(true);
+      setGoogleLoading(true);
       configureGoogleSignIn();
       await GoogleSignin.hasPlayServices();
       await GoogleSignin.signOut();
@@ -428,7 +433,7 @@ export default function LoginScreen() {
       );
       showAlert({ title: "Google sign-in failed", message });
     } finally {
-      setLoading(false);
+      setGoogleLoading(false);
     }
   };
 
@@ -498,8 +503,9 @@ export default function LoginScreen() {
               resetSignupVerification();
             }}
             onGoogleSignIn={handleGoogleSignIn}
-            googleDisabled={loading}
-            loading={loading}
+            googleDisabled={authLoading || googleLoading}
+            authLoading={authLoading}
+            googleLoading={googleLoading}
             signupOtpSentTo={signupOtpSentTo}
           />
         </Animated.View>

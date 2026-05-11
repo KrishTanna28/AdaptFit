@@ -481,6 +481,16 @@ const TIMELINE_SIGNAL_KEYS = [
   "pose.center.y",
 ] as const;
 
+const LIVE_REP_SIGNAL_KEYS = [
+  "posture.leftKneeAngleDeg",
+  "posture.rightKneeAngleDeg",
+  "posture.leftElbowAngleDeg",
+  "posture.rightElbowAngleDeg",
+  "posture.torsoLeanDeg",
+  "pose.center.y",
+  "pose.center.x",
+];
+
 const TIMELINE_SIGNAL_LABELS: Record<(typeof TIMELINE_SIGNAL_KEYS)[number], string> = {
   "posture.torsoLeanDeg": "torso lean",
   "posture.shoulderTiltDeg": "shoulder tilt",
@@ -684,4 +694,23 @@ export function summarizePoseMetrics(
     movementDetail: buildMovementDetail(sortedFrames),
     sampleCount: sortedFrames.length,
   };
+}
+
+export function estimateLiveReps(frames: PoseFrameMetrics[]) {
+  if (frames.length < 12) return 0;
+
+  const availableKeys = LIVE_REP_SIGNAL_KEYS.filter((key) =>
+    frames.some((frame) => Number.isFinite(frame.signals[key])),
+  );
+
+  const keys = availableKeys.length
+    ? availableKeys
+    : Array.from(new Set(frames.flatMap((frame) => Object.keys(frame.signals))));
+
+  const signalAnalyses = keys
+    .map((key) => analyzeSignal(frames, key))
+    .filter((item): item is NonNullable<ReturnType<typeof analyzeSignal>> => item !== null);
+
+  const dominant = signalAnalyses.sort((a, b) => b.score - a.score)[0] ?? null;
+  return dominant ? dominant.reps : 0;
 }

@@ -6,6 +6,7 @@ import AppButton from "../components/ui/AppButton";
 import AppTextField from "../components/ui/AppTextField";
 import { analyzeWorkoutForm, type FormAnalysisResponse } from "../services/formAnalysis";
 import {
+  estimateLiveReps,
   summarizePoseMetrics,
   type PoseFrameMetrics,
   type PoseMetricSummary,
@@ -30,9 +31,11 @@ export default function WorkoutFormCheckModal({
   const [exerciseName, setExerciseName] = React.useState("");
   const [isRecording, setIsRecording] = React.useState(false);
   const [summary, setSummary] = React.useState<PoseMetricSummary | null>(null);
+  const [liveReps, setLiveReps] = React.useState(0);
   const [analysis, setAnalysis] = React.useState<FormAnalysisResponse | null>(null);
   const [isAnalyzing, setIsAnalyzing] = React.useState(false);
   const [errorText, setErrorText] = React.useState("");
+  const lastLiveRepsUpdateRef = React.useRef(0);
 
   React.useEffect(() => {
     if (!visible) {
@@ -41,6 +44,7 @@ export default function WorkoutFormCheckModal({
       setExerciseName("");
       setIsRecording(false);
       setSummary(null);
+      setLiveReps(0);
       setAnalysis(null);
       setIsAnalyzing(false);
       setErrorText("");
@@ -65,7 +69,20 @@ export default function WorkoutFormCheckModal({
 
   const handleFrameMetrics = React.useCallback((metrics: PoseFrameMetrics) => {
     framesRef.current.push(metrics);
-  }, []);
+
+    if (!isRecording) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastLiveRepsUpdateRef.current < 250) {
+      return;
+    }
+
+    lastLiveRepsUpdateRef.current = now;
+    const nextReps = estimateLiveReps(framesRef.current);
+    setLiveReps((prev) => Math.max(prev, nextReps));
+  }, [isRecording]);
 
   const startRecording = () => {
     if (Platform.OS !== "android") {
@@ -75,9 +92,11 @@ export default function WorkoutFormCheckModal({
 
     framesRef.current = [];
     setSummary(null);
+    setLiveReps(0);
     setAnalysis(null);
     setErrorText("");
     setIsRecording(true);
+    lastLiveRepsUpdateRef.current = 0;
   };
 
   const stopRecording = async () => {
@@ -93,6 +112,7 @@ export default function WorkoutFormCheckModal({
 
     const nextSummary = summarizePoseMetrics(trimmedExerciseName, frames);
     setSummary(nextSummary);
+    setLiveReps((prev) => Math.max(prev, nextSummary.repsDetected));
     setIsAnalyzing(true);
     setErrorText("");
 
@@ -180,7 +200,9 @@ export default function WorkoutFormCheckModal({
         <Text style={styles.entryMeta}>
           {isRecording ? "Recording" : isAnalyzing ? "Analyzing" : "Ready"}
         </Text>
-        <Text style={styles.entryMeta}>Reps: {summary?.repsDetected}</Text>
+        <Text style={styles.entryMeta}>
+          Reps: {String(isRecording ? liveReps : summary?.repsDetected ?? liveReps)}
+        </Text>
       </View>
 
       {errorText ? <Text style={styles.formErrorText}>{errorText}</Text> : null}
@@ -251,6 +273,7 @@ export default function WorkoutFormCheckModal({
             onPress={() => {
               framesRef.current = [];
               setSummary(null);
+              setLiveReps(0);
               setAnalysis(null);
               setErrorText("");
               setStep("camera");

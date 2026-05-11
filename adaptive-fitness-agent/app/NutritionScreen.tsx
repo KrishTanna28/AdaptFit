@@ -798,15 +798,20 @@ export default function NutritionScreen() {
       return;
     }
 
-    setPlateDraft({
+    const nextDraft: PlateCaptureDraft = {
       visible: true,
       meal,
       imageUri: asset.uri,
       imageBase64: asset.base64,
       mimeType: asset.mimeType ?? "image/jpeg",
       totalWeightLabel: "",
-      isAnalyzing: false,
-    });
+      isAnalyzing: true,
+    };
+
+    setPlateDraft(nextDraft);
+    setTimeout(() => {
+      void handleAnalyzePlate(nextDraft);
+    }, 0);
   };
 
   const handleRetakePlatePhoto = () => {
@@ -816,8 +821,9 @@ export default function NutritionScreen() {
     void handleCapturePlate(meal);
   };
 
-  const handleAnalyzePlate = async () => {
-    const trimmedWeight = plateDraft.totalWeightLabel.trim();
+  const handleAnalyzePlate = async (draftOverride?: PlateCaptureDraft) => {
+    const draft = draftOverride ?? plateDraft;
+    const trimmedWeight = draft.totalWeightLabel.trim();
     const totalWeightGrams = trimmedWeight ? Number(trimmedWeight) : undefined;
     if (
       totalWeightGrams !== undefined &&
@@ -830,7 +836,7 @@ export default function NutritionScreen() {
       return;
     }
 
-    if (!plateDraft.imageBase64) {
+    if (!draft.imageBase64) {
       showAlert({
         title: "Missing photo",
         message: "Capture a plate photo before analyzing.",
@@ -838,12 +844,17 @@ export default function NutritionScreen() {
       return;
     }
 
-    setPlateDraft((prev) => ({ ...prev, isAnalyzing: true }));
+    setPlateDraft((prev) => ({
+      ...prev,
+      ...draft,
+      visible: true,
+      isAnalyzing: true,
+    }));
 
     try {
       const result = await analyzePlateFoodImage({
-        imageBase64: plateDraft.imageBase64,
-        mimeType: plateDraft.mimeType,
+        imageBase64: draft.imageBase64,
+        mimeType: draft.mimeType,
         totalWeightGrams,
       });
 
@@ -858,7 +869,7 @@ export default function NutritionScreen() {
       dispatchModalDraft({
         type: "OPEN_PLATE_MANUAL",
         payload: {
-          selectedMeal: plateDraft.meal,
+          selectedMeal: draft.meal,
           manual: buildPlateManualState(result),
         },
       });
