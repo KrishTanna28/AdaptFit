@@ -6,6 +6,12 @@ import { generatePlateFoodVisionResponse } from "./coach/geminiClient.js";
 import { mountFormAnalysisRoutes } from "./formAnalysis/routes.js";
 import { mountHomeRoutes } from "./home/routes.js";
 import { mountEmailOtpRoutes } from "./auth/emailOtp.js";
+import { mountEventRoutes } from "./events/routes.js";
+import { mountMetricsEndpoint, metricsMiddleware } from "./observability/metrics.js";
+import { logger } from "./observability/logger.js";
+import { closeIntelligenceQueue } from "./queues/intelligenceQueue.js";
+import { closeQueueConnection } from "./queues/connection.js";
+import { closeIntelligenceWorker, startIntelligenceWorker } from "./queues/worker.js";
 
 dotenv.config();
 
@@ -21,6 +27,7 @@ const GOOGLE_VISION_MIN_CONFIDENCE = Math.max(
 const GOOGLE_VISION_MAX_RESULTS = toPositiveInt(process.env.GOOGLE_VISION_MAX_RESULTS, 12);
 
 app.use(express.json({ limit: "15mb" }));
+app.use(metricsMiddleware);
 
 function toNumber(value, fallback = 0) {
   const n = typeof value === "number" ? value : Number(value);
@@ -1238,9 +1245,12 @@ mountCoachRoutes(app);
 mountHomeRoutes(app);
 mountFormAnalysisRoutes(app);
 mountEmailOtpRoutes(app);
+mountEventRoutes(app);
+mountMetricsEndpoint(app);
+startIntelligenceWorker();
 
 app.listen(PORT, () => {
-  console.log(`Nutrition proxy running on port ${PORT}`);
+  logger.info({ port: PORT }, "Nutrition proxy running.");
 });
 
 async function gracefulShutdown(signal) {
@@ -1248,11 +1258,14 @@ async function gracefulShutdown(signal) {
   if (redisClient && redisReady) {
     try {
       await redisClient.quit();
-      console.log("Redis client closed.");
+      logger.info("Redis client closed.");
     } catch (error) {
 
     }
   }
+  await closeIntelligenceWorker();
+  await closeIntelligenceQueue();
+  await closeQueueConnection();
   process.exit(0);
 }
 

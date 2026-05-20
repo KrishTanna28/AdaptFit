@@ -1,3 +1,7 @@
+import { CoachContextSchema } from "../schemas/firestore.js";
+import { validateOrThrow } from "../schemas/validators.js";
+import { firestoreLatencyMs } from "../observability/metrics.js";
+
 const DEFAULT_CONTEXT_WINDOW_DAYS = 7;
 const MAX_CONTEXT_WINDOW_DAYS = 30;
 const PROFILE_HISTORY_LIMIT = 30;
@@ -576,6 +580,7 @@ function buildSignals(input) {
 }
 
 export async function loadCoachContext(db, uid, options = {}) {
+  const loadStart = performance.now();
   const now = new Date();
   const currentDateKey = toDateKey(now);
   const requestedWindow = toNumber(options.windowDays, DEFAULT_CONTEXT_WINDOW_DAYS);
@@ -845,7 +850,7 @@ export async function loadCoachContext(db, uid, options = {}) {
     stepsSummary,
   });
 
-  return {
+  const context = {
     generatedAt: now.toISOString(),
     currentDateKey,
     recentDateKeys: buildRecentDateKeys(windowDays),
@@ -856,6 +861,10 @@ export async function loadCoachContext(db, uid, options = {}) {
       rawDocument: userData,
     },
     profile,
+    profileHistory: {
+      entries: profileHistoryEntries,
+      entryCount: profileHistoryEntries.length,
+    },
     stepGoal,
     window: {
       includeAllHistory,
@@ -873,4 +882,7 @@ export async function loadCoachContext(db, uid, options = {}) {
     steps: stepsSummary,
     signals,
   };
+
+  firestoreLatencyMs.labels("loadCoachContext").observe(performance.now() - loadStart);
+  return validateOrThrow(CoachContextSchema, context, "coach Firestore context");
 }

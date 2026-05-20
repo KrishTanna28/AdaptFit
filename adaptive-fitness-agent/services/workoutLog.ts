@@ -11,6 +11,7 @@ import { db } from "./firebase";
 import type { MetIntensity } from "./workoutMetDataset";
 import type { MappingSource } from "./workoutMetMapping";
 import {toText, toNumber, toPositiveNumber, toOptionalPositiveInt} from "./helperFunctions"
+import { publishIntelligenceEvent } from "./intelligenceEvents";
 
 export type LoggedWorkoutMode = "cardio" | "strength" | "sports";
 
@@ -213,6 +214,15 @@ export async function upsertLoggedWorkoutEntryPartial(
     ),
   ]);
 
+  void publishIntelligenceEvent({
+    type: "workout_logged",
+    payload: {
+      dateKey,
+      entryId: normalized.id,
+      workoutName: normalized.workoutName,
+    },
+  });
+
   return { updated: true, changedFields };
 }
 
@@ -233,4 +243,12 @@ export async function deleteLoggedWorkoutEntry(
       { merge: true },
     ),
   ]);
+
+  void publishIntelligenceEvent({
+    type: "workout_logged",
+    payload: {
+      dateKey,
+      entryId,
+    },
+  });
 }

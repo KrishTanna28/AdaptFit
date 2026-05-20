@@ -1,0 +1,213 @@
+import { z } from "zod";
+import {
+  NonEmptyStringSchema,
+  NonNegativeIntSchema,
+  NonNegativeNumberSchema,
+  PositiveIntSchema,
+} from "./primitives.js";
+
+export const MAX_WORKOUT_TITLE_LENGTH = 80;
+export const MAX_WORKOUT_NAME_LENGTH = 80;
+export const MAX_WORKOUT_EXERCISES = 16;
+export const MAX_MEAL_TITLE_LENGTH = 80;
+export const MAX_MEAL_NAME_LENGTH = 90;
+export const MAX_MEAL_ITEM_LENGTH = 60;
+export const MAX_MEAL_ITEMS = 8;
+export const MAX_PLAN_MEALS = 4;
+
+const nonEmptyLimitedString = (maxLength) => NonEmptyStringSchema.max(maxLength);
+const optionalNonNegativeNumber = NonNegativeNumberSchema.default(0);
+
+export const AiUsageSchema = z
+  .object({
+    promptTokenCount: NonNegativeIntSchema,
+    candidatesTokenCount: NonNegativeIntSchema,
+    totalTokenCount: NonNegativeIntSchema,
+  })
+  .strict();
+
+export const CoachWorkoutExerciseSchema = z
+  .object({
+    name: nonEmptyLimitedString(MAX_WORKOUT_NAME_LENGTH),
+    sets: PositiveIntSchema,
+    reps: PositiveIntSchema,
+  })
+  .strict();
+
+export const CoachWorkoutPlanSchema = z
+  .object({
+    title: nonEmptyLimitedString(MAX_WORKOUT_TITLE_LENGTH),
+    exercises: z.array(CoachWorkoutExerciseSchema).min(1).max(MAX_WORKOUT_EXERCISES),
+  })
+  .strict();
+
+export const CoachMealTypeSchema = z.enum(["breakfast", "lunch", "dinner", "snacks"]);
+
+export const CoachMealPlanMealSchema = z
+  .object({
+    mealType: CoachMealTypeSchema,
+    name: nonEmptyLimitedString(MAX_MEAL_NAME_LENGTH),
+    items: z.array(z.string().trim().max(MAX_MEAL_ITEM_LENGTH)).max(MAX_MEAL_ITEMS).default([]),
+    calories: optionalNonNegativeNumber,
+    protein: optionalNonNegativeNumber,
+    carbs: optionalNonNegativeNumber,
+    fat: optionalNonNegativeNumber,
+    fiber: optionalNonNegativeNumber,
+    sodiumMg: optionalNonNegativeNumber,
+    potassiumMg: optionalNonNegativeNumber,
+    calciumMg: optionalNonNegativeNumber,
+    ironMg: optionalNonNegativeNumber,
+    vitaminCMg: optionalNonNegativeNumber,
+  })
+  .strict();
+
+export const CoachMealPlanSchema = z
+  .object({
+    title: nonEmptyLimitedString(MAX_MEAL_TITLE_LENGTH),
+    meals: z.array(CoachMealPlanMealSchema).min(1).max(MAX_PLAN_MEALS),
+  })
+  .strict();
+
+export const HomeInsightSchema = z
+  .object({
+    title: nonEmptyLimitedString(80),
+    summary: nonEmptyLimitedString(180),
+    focus: z.string().trim().max(80).default("Consistency"),
+    actions: z.array(z.string().trim().min(1).max(120)).max(3).default([]),
+  })
+  .strict();
+
+export const TranscriptionOutputSchema = z
+  .object({
+    text: NonEmptyStringSchema.max(10000),
+    model: z.string().trim().min(1).optional(),
+    usage: AiUsageSchema.nullable().optional(),
+  })
+  .strict();
+
+export const AiOutputSchema = z.union([
+  CoachWorkoutPlanSchema,
+  CoachMealPlanSchema,
+  HomeInsightSchema,
+  TranscriptionOutputSchema,
+]);
+
+function safeString(value, maxLength) {
+  return String(value ?? "").trim().slice(0, maxLength);
+}
+
+function toPositiveInt(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) {
+    return null;
+  }
+  return Math.round(n);
+}
+
+function toNonNegativeNumber(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    return 0;
+  }
+  return Math.round(n * 10) / 10;
+}
+
+function normalizeMealType(value) {
+  const normalized = safeString(value, 30).toLowerCase();
+  if (normalized === "breakfast") return "breakfast";
+  if (normalized === "lunch") return "lunch";
+  if (normalized === "dinner") return "dinner";
+  if (normalized === "snack" || normalized === "snacks") return "snacks";
+  return "";
+}
+
+export function repairCoachWorkoutPlan(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  const exercises = (Array.isArray(raw.exercises) ? raw.exercises : [])
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+
+      const name = safeString(item.name, MAX_WORKOUT_NAME_LENGTH);
+      const sets = toPositiveInt(item.sets);
+      const reps = toPositiveInt(item.reps);
+      if (!name || !sets || !reps) {
+        return null;
+      }
+      return { name, sets, reps };
+    })
+    .filter((item) => item !== null)
+    .slice(0, MAX_WORKOUT_EXERCISES);
+
+  return {
+    title: safeString(raw.title, MAX_WORKOUT_TITLE_LENGTH),
+    exercises,
+  };
+}
+
+export function repairCoachMealPlan(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  const meals = (Array.isArray(raw.meals) ? raw.meals : [])
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+
+      const mealType = normalizeMealType(item.mealType);
+      const name = safeString(item.name, MAX_MEAL_NAME_LENGTH);
+      if (!mealType || !name) {
+        return null;
+      }
+
+      return {
+        mealType,
+        name,
+        items: Array.isArray(item.items)
+          ? item.items
+              .map((food) => safeString(food, MAX_MEAL_ITEM_LENGTH))
+              .filter(Boolean)
+              .slice(0, MAX_MEAL_ITEMS)
+          : [],
+        calories: toNonNegativeNumber(item.calories),
+        protein: toNonNegativeNumber(item.protein),
+        carbs: toNonNegativeNumber(item.carbs),
+        fat: toNonNegativeNumber(item.fat),
+        fiber: toNonNegativeNumber(item.fiber),
+        sodiumMg: toNonNegativeNumber(item.sodiumMg),
+        potassiumMg: toNonNegativeNumber(item.potassiumMg),
+        calciumMg: toNonNegativeNumber(item.calciumMg),
+        ironMg: toNonNegativeNumber(item.ironMg),
+        vitaminCMg: toNonNegativeNumber(item.vitaminCMg),
+      };
+    })
+    .filter((item) => item !== null)
+    .slice(0, MAX_PLAN_MEALS);
+
+  return {
+    title: safeString(raw.title, MAX_MEAL_TITLE_LENGTH),
+    meals,
+  };
+}
+
+export function repairHomeInsight(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  return {
+    title: safeString(raw.title, 80),
+    summary: safeString(raw.summary, 180),
+    focus: safeString(raw.focus, 80) || "Consistency",
+    actions: Array.isArray(raw.actions)
+      ? raw.actions.map((item) => safeString(item, 120)).filter(Boolean).slice(0, 3)
+      : [],
+  };
+}
+

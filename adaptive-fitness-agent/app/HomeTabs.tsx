@@ -13,6 +13,7 @@ import WorkoutScreen from "./WorkoutScreen";
 import useLiveStepCounter, { DAILY_STEP_GOAL } from "../hooks/useLiveStepCounter";
 import { db } from "../services/firebase";
 import { getTodayDateKey } from "../services/helperFunctions";
+import { publishIntelligenceEvent } from "../services/intelligenceEvents";
 import { upsertDailyStepLog } from "../services/stepLog";
 import { appTheme } from "../theme/designSystem";
 
@@ -121,6 +122,12 @@ export default function HomeTabs({ user }: HomeTabsProps) {
           ),
           FIRESTORE_SAVE_TIMEOUT_MS,
         );
+        void publishIntelligenceEvent({
+          type: "profile_updated",
+          payload: {
+            changedFields: ["dailyStepGoal"],
+          },
+        });
       } catch (error) {
         setDailyStepGoal(previousGoal);
 

@@ -5,6 +5,8 @@ import { computeScores } from "./scoring.js";
 import { classifyStates } from "./state.js";
 import { buildDailyNullableSeries, buildDailySeries, computeTrend } from "./trend.js";
 import { computeStreak, mean, roundTo, safeDivide, toNumber } from "./utils.js";
+import { DeterministicEngineOutputSchema } from "../schemas/signals.js";
+import { validateOrThrow } from "../schemas/validators.js";
 
 const DETERMINISTIC_VERSION = "v1";
 const DEFAULT_SIGNAL_LIMIT = 5;
@@ -174,7 +176,7 @@ export function buildDeterministicContext(context) {
   const decisions = buildDecision({ context, dailyMetrics, scores, states });
   const memory = buildMemorySummary({ context, dailyMetrics, scores, states, decisions, trends });
 
-  return {
+  const deterministicContext = {
     version: DETERMINISTIC_VERSION,
     generatedAt: context.generatedAt,
     scores,
@@ -192,6 +194,12 @@ export function buildDeterministicContext(context) {
       memory,
     }),
   };
+
+  return validateOrThrow(
+    DeterministicEngineOutputSchema,
+    deterministicContext,
+    "deterministic engine output",
+  );
 }
 
 export function buildDeterministicSignature(context) {

@@ -1,7 +1,11 @@
 import express from "express";
 
 import { getCoachFirestore, verifyCoachIdToken } from "../coach/firebaseAdmin.js";
-import { cacheGetJson, cacheSetJson, buildCacheKey } from "../redisCache.js";
+import {
+  buildCacheKey,
+  getCachedJson as cacheGetJson,
+  setCachedJson as cacheSetJson,
+} from "../cache/cacheManager.js";
 import { loadCoachContext } from "../coach/context.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;

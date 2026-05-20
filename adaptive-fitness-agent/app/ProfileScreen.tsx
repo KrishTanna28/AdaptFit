@@ -8,6 +8,7 @@ import { Camera, Pencil } from "lucide-react-native";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../services/firebase";
+import { publishIntelligenceEvent } from "../services/intelligenceEvents";
 
 import {
     getUserFriendlyErrorMessage,
@@ -288,6 +289,13 @@ export default function ProfileScreen({ user }: ProfileScreenProps) {
                         changedFields,
                         snapshot: buildProfileHistorySnapshot(nextProfile),
                         source: "profile_update",
+                    });
+
+                    void publishIntelligenceEvent({
+                        type: "profile_updated",
+                        payload: {
+                            changedFields,
+                        },
                     });
                 }
                 if(successTitle){

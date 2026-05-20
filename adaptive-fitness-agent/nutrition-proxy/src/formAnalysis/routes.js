@@ -3,6 +3,8 @@ import express from "express";
 import { verifyCoachIdToken } from "../coach/firebaseAdmin.js";
 import { generateFormAnalysisResponse } from "../coach/geminiClient.js";
 import { buildFormAnalysisPrompt } from "./prompt.js";
+import { FormAnalysisRequestSchema, FormAnalysisResponseSchema } from "../schemas/api.js";
+import { safeValidate, sendValidatedJson, validationErrorResponse } from "../schemas/validators.js";
 
 const MAX_EXERCISE_NAME_LENGTH = 80;
 const MAX_SUMMARY_JSON_LENGTH = 90000;
@@ -10,7 +12,7 @@ const MAX_SUMMARY_JSON_LENGTH = 90000;
 const PROVIDER_ACCESS_DENIED_PATTERN =
   /denied access|permission[_\s-]?denied|api key not valid|insufficient permissions|contact support|forbidden|status:\s*403|api has not been used|disabled/i;
 const PROVIDER_AUTH_FAILED_PATTERN =
-  /unable to authenticate your request|vertex-sdk-api-key-not-supported|no credentials|could not refresh access token/i;
+  /unable to authenticate your request|no credentials|could not refresh access token|genai-api-key-missing|genai-project-id-missing|api key missing|api key not set/i;
 const RATE_LIMIT_PATTERN = /quota|resource exhausted|rate limit|too many requests/i;
 const PROVIDER_UNAVAILABLE_PATTERN =
   /unavailable|deadline exceeded|timed out|timeout|temporarily unavailable/i;
@@ -122,21 +124,22 @@ export function mountFormAnalysisRoutes(app) {
 
   router.post("/analyze", requireFormAnalysisUser, async (req, res) => {
     try {
-      const exerciseName = normalizeExerciseName(req.body?.exerciseName);
-      if (exerciseName.length < 2) {
-        return res.status(400).json({ message: "exerciseName is required." });
+      const requestValidation = safeValidate(
+        FormAnalysisRequestSchema,
+        req.body ?? {},
+        "form analysis request",
+      );
+      if (!requestValidation.ok) {
+        return res.status(400).json(validationErrorResponse(requestValidation));
       }
 
-      const summary = normalizeSummary(req.body?.summary);
-      if (!summary) {
-        return res.status(400).json({ message: "summary is required." });
-      }
-
+      const exerciseName = normalizeExerciseName(requestValidation.data.exerciseName);
+      const summary = normalizeSummary(requestValidation.data.summary);
       const prompt = buildFormAnalysisPrompt({ exerciseName, summary });
       const response = await generateFormAnalysisResponse({ prompt });
       const insights = parseInsights(response.text);
 
-      return res.json({
+      return sendValidatedJson(res, FormAnalysisResponseSchema, {
         exerciseName,
         repsDetected: Number(summary?.repsDetected ?? 0) || 0,
         insights: insights.length
@@ -144,7 +147,7 @@ export function mountFormAnalysisRoutes(app) {
           : ["Record another set with your full body visible for clearer form feedback."],
         model: response.model,
         usage: response.usage,
-      });
+      }, "form analysis response");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown error";
       const statusCode = /summary-too-large/i.test(detail) ? 413 : inferStatus(detail, 500);

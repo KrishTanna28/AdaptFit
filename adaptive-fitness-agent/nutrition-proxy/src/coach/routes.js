@@ -12,32 +12,63 @@ import {
 import { loadCoachContext } from "./context.js";
 import { getCoachFirestore, verifyCoachIdToken } from "./firebaseAdmin.js";
 import {
-  generateCoachResponse,
   generateHomeInsightsResponse,
   transcribeAudioWithVertex,
 } from "./geminiClient.js";
-import { buildCoachSystemPrompt, buildCoachUserPrompt } from "./prompt.js";
-import { buildCacheKey, cacheGetJson, cacheSetJson } from "../redisCache.js";
+import {
+  buildCacheKey,
+  getCachedJson as cacheGetJson,
+  setCachedJson as cacheSetJson,
+} from "../cache/cacheManager.js";
+import { compressPromptContext } from "../ai/compression/semanticCompressor.js";
+import { buildCompressedCoachSystemPrompt, buildCompressedCoachUserPrompt } from "../ai/prompts/coachPrompt.js";
+import { createAiProvider } from "../ai/providers/index.js";
+import { retrieveSelectiveContext } from "../ai/retrieval/selectiveContext.js";
+import { classifyIntent } from "../ai/routing/intentClassifier.js";
+import { publishIntelligenceEvent } from "../events/eventBus.js";
+import { buildSignalPacketFromContext } from "../intelligence/signalEngine.js";
+import { saveSignalState } from "../intelligence/signalStore.js";
+import { validateCoachPlanSafety } from "../intelligence/validators/safety.js";
+import {
+  firstTokenLatencyMs,
+  streamingInterruptions,
+  tokenCountHistogram,
+} from "../observability/metrics.js";
+import {
+  CoachChatRequestSchema,
+  CoachChatResponseSchema,
+  ConversationMessagesResponseSchema,
+  ConversationsResponseSchema,
+  DeleteConversationResponseSchema,
+  HomeInsightsQuerySchema,
+  HomeInsightsResponseSchema,
+  TranscribeRequestSchema,
+  TranscribeResponseSchema,
+} from "../schemas/api.js";
+import {
+  CoachMealPlanSchema,
+  CoachWorkoutPlanSchema,
+  HomeInsightSchema,
+  repairCoachMealPlan,
+  repairCoachWorkoutPlan,
+  repairHomeInsight,
+} from "../schemas/aiOutputs.js";
+import {
+  parseLlmJsonWithSchema,
+  safeValidate,
+  sendValidatedJson,
+  validationErrorResponse,
+} from "../schemas/validators.js";
+import { errorToLog, logger } from "../observability/logger.js";
 
-const MAX_MESSAGE_LENGTH = 4000;
-const MAX_ATTACHMENTS = 5;
-const MAX_ATTACHMENT_CONTENT_LENGTH = 20000;
-const MAX_AUDIO_BASE64_LENGTH = 8 * 1024 * 1024;
-const MAX_WORKOUT_TITLE_LENGTH = 80;
-const MAX_WORKOUT_NAME_LENGTH = 80;
-const MAX_WORKOUT_EXERCISES = 16;
-const MAX_MEAL_TITLE_LENGTH = 80;
-const MAX_MEAL_NAME_LENGTH = 90;
-const MAX_MEAL_ITEM_LENGTH = 60;
-const MAX_MEAL_ITEMS = 8;
-const MAX_PLAN_MEALS = 4;
 const HOME_INSIGHT_TTL_SECONDS = 7 * 24 * 60 * 60;
 const HOME_INSIGHT_CACHE_VERSION = "v1";
+const aiProvider = createAiProvider();
 
 const PROVIDER_ACCESS_DENIED_PATTERN =
   /denied access|permission[_\s-]?denied|api key not valid|insufficient permissions|contact support|forbidden|status:\s*403|api has not been used|disabled/i;
 const PROVIDER_AUTH_FAILED_PATTERN =
-  /unable to authenticate your request|vertex-sdk-api-key-not-supported|no credentials|could not refresh access token/i;
+  /unable to authenticate your request|no credentials|could not refresh access token|genai-api-key-missing|genai-project-id-missing|gemini-api-key-missing|vertex-project-id-missing|vertex-credentials-missing|api key missing|api key not set/i;
 const RATE_LIMIT_PATTERN =
   /quota|resource exhausted|rate limit|too many requests/i;
 const PROVIDER_UNAVAILABLE_PATTERN =
@@ -92,208 +123,34 @@ function parseBearerToken(authorizationHeader) {
   return header.slice(7).trim();
 }
 
-function toSafeMessage(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function extractJsonText(text) {
-  const raw = String(text ?? "").trim();
-  if (!raw) {
-    return "";
-  }
-
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced) {
-    return String(fenced[1] ?? "").trim();
-  }
-
-  const firstCurly = raw.indexOf("{");
-  const lastCurly = raw.lastIndexOf("}");
-  if (firstCurly !== -1 && lastCurly > firstCurly) {
-    return raw.slice(firstCurly, lastCurly + 1).trim();
-  }
-
-  return raw;
-}
-
-function toPositiveInt(value) {
-  const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(n) || n <= 0) {
-    return null;
-  }
-  return Math.round(n);
-}
-
-function toNonNegativeNumber(value) {
-  const n = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(n) || n < 0) {
-    return 0;
-  }
-  return Math.round(n * 10) / 10;
-}
-
-function normalizeMealType(value) {
-  const normalized = toSafeMessage(value).toLowerCase();
-  if (normalized === "breakfast") return "breakfast";
-  if (normalized === "lunch") return "lunch";
-  if (normalized === "dinner") return "dinner";
-  if (normalized === "snack" || normalized === "snacks") return "snacks";
-  return "";
-}
-
-function normalizeWorkoutPlan(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return null;
-  }
-
-  const title = toSafeMessage(raw.title).slice(0, MAX_WORKOUT_TITLE_LENGTH);
-  const exercisesRaw = Array.isArray(raw.exercises) ? raw.exercises : [];
-  const exercises = exercisesRaw
-    .map((item) => {
-      if (!item || typeof item !== "object") {
-        return null;
-      }
-
-      const name = toSafeMessage(item.name).slice(0, MAX_WORKOUT_NAME_LENGTH);
-      const sets = toPositiveInt(item.sets);
-      const reps = toPositiveInt(item.reps);
-
-      if (!name || !sets || !reps) {
-        return null;
-      }
-
-      return { name, sets, reps };
-    })
-    .filter((item) => item !== null);
-
-  if (!title || exercises.length === 0) {
-    return null;
-  }
-
-  return {
-    title,
-    exercises: exercises.slice(0, MAX_WORKOUT_EXERCISES),
-  };
-}
-
 function parseWorkoutPlan(text) {
-  const cleaned = extractJsonText(text);
-  if (!cleaned) {
-    return null;
-  }
-
-  try {
-    return normalizeWorkoutPlan(JSON.parse(cleaned));
-  } catch {
-    return null;
-  }
-}
-
-function normalizeMealPlan(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return null;
-  }
-
-  const title = toSafeMessage(raw.title).slice(0, MAX_MEAL_TITLE_LENGTH);
-  const mealsRaw = Array.isArray(raw.meals) ? raw.meals : [];
-  const meals = mealsRaw
-    .map((item) => {
-      if (!item || typeof item !== "object") {
-        return null;
-      }
-
-      const mealType = normalizeMealType(item.mealType);
-      const name = toSafeMessage(item.name).slice(0, MAX_MEAL_NAME_LENGTH);
-      const items = Array.isArray(item.items)
-        ? item.items
-            .map((food) => toSafeMessage(food).slice(0, MAX_MEAL_ITEM_LENGTH))
-            .filter(Boolean)
-            .slice(0, MAX_MEAL_ITEMS)
-        : [];
-
-      if (!mealType || !name) {
-        return null;
-      }
-
-      return {
-        mealType,
-        name,
-        items,
-        calories: toNonNegativeNumber(item.calories),
-        protein: toNonNegativeNumber(item.protein),
-        carbs: toNonNegativeNumber(item.carbs),
-        fat: toNonNegativeNumber(item.fat),
-        fiber: toNonNegativeNumber(item.fiber),
-        sodiumMg: toNonNegativeNumber(item.sodiumMg),
-        potassiumMg: toNonNegativeNumber(item.potassiumMg),
-        calciumMg: toNonNegativeNumber(item.calciumMg),
-        ironMg: toNonNegativeNumber(item.ironMg),
-        vitaminCMg: toNonNegativeNumber(item.vitaminCMg),
-      };
-    })
-    .filter((item) => item !== null)
-    .slice(0, MAX_PLAN_MEALS);
-
-  if (!title || meals.length === 0) {
-    return null;
-  }
-
-  return {
-    title,
-    meals,
-  };
+  return parseLlmJsonWithSchema({
+    text,
+    schema: CoachWorkoutPlanSchema,
+    repair: repairCoachWorkoutPlan,
+    fallback: null,
+    label: "coach-workout-plan",
+  });
 }
 
 function parseMealPlan(text) {
-  const cleaned = extractJsonText(text);
-  if (!cleaned) {
-    return null;
-  }
-
-  try {
-    return normalizeMealPlan(JSON.parse(cleaned));
-  } catch {
-    return null;
-  }
-}
-
-function normalizeHomeInsights(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return null;
-  }
-
-  const title = toSafeMessage(raw.title).slice(0, 80);
-  const summary = toSafeMessage(raw.summary).slice(0, 180);
-  const focus = toSafeMessage(raw.focus).slice(0, 80);
-  const actionsRaw = Array.isArray(raw.actions) ? raw.actions : [];
-  const actions = actionsRaw
-    .map((item) => toSafeMessage(item).slice(0, 120))
-    .filter(Boolean)
-    .slice(0, 3);
-
-  if (!title || !summary) {
-    return null;
-  }
-
-  return {
-    title,
-    summary,
-    focus: focus || "Consistency",
-    actions,
-  };
+  return parseLlmJsonWithSchema({
+    text,
+    schema: CoachMealPlanSchema,
+    repair: repairCoachMealPlan,
+    fallback: null,
+    label: "coach-meal-plan",
+  });
 }
 
 function parseHomeInsights(text) {
-  const cleaned = extractJsonText(text);
-  if (!cleaned) {
-    return null;
-  }
-
-  try {
-    return normalizeHomeInsights(JSON.parse(cleaned));
-  } catch {
-    return null;
-  }
+  return parseLlmJsonWithSchema({
+    text,
+    schema: HomeInsightSchema,
+    repair: repairHomeInsight,
+    fallback: null,
+    label: "home-insight",
+  });
 }
 
 function buildHomeInsightsPrompt(context) {
@@ -370,57 +227,75 @@ function buildMealReply(mealPlan) {
   )} ${label} to today's nutrition log.`;
 }
 
-function normalizeWindowDays(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) {
-    return 7;
+function applySafetyFallback({ replyText, workoutPlan, mealPlan, signalPacket }) {
+  const safety = validateCoachPlanSafety({ signalPacket, workoutPlan, mealPlan });
+  if (safety.allowed) {
+    return { replyText, workoutPlan, mealPlan, safety };
   }
-  return Math.max(7, Math.min(30, Math.floor(n)));
+
+  const primaryViolation = safety.violations.find((item) => item.severity === "high") ?? safety.violations[0];
+  return {
+    replyText:
+      primaryViolation?.message ||
+      "I am adjusting this to stay aligned with your recovery and safety signals today.",
+    workoutPlan: undefined,
+    mealPlan: undefined,
+    safety,
+  };
 }
 
-function normalizeIncludeAllHistory(value) {
-  return value !== false;
+async function buildCoachOrchestration({ db, uid, message, conversationId, history, context, previousCoachChats, attachments }) {
+  const intent = classifyIntent(message);
+  const signalResult = await buildSignalPacketFromContext(context);
+  await saveSignalState(
+    db,
+    uid,
+    {
+      signalPacket: signalResult.signalPacket,
+      signature: signalResult.signature,
+      reason: "chat-request",
+    },
+    { windowDays: context.window?.requestedDays ?? 30 },
+  );
+
+  const retrieval = retrieveSelectiveContext({
+    context,
+    signalPacket: signalResult.signalPacket,
+    intent,
+    conversationMemory: previousCoachChats,
+  });
+  const compressed = compressPromptContext(retrieval);
+  tokenCountHistogram.labels("prompt", "coach.chat").observe(compressed.tokenCount);
+
+  publishIntelligenceEvent({
+    type: "ai_chat_requested",
+    uid,
+    payload: {
+      conversationId,
+      intent: intent.primaryIntent,
+    },
+    source: "coach-route",
+  }).catch(() => {});
+
+  return {
+    intent,
+    signalPacket: signalResult.signalPacket,
+    signalSignature: signalResult.signature,
+    systemPrompt: buildCompressedCoachSystemPrompt(),
+    userPrompt: buildCompressedCoachUserPrompt({
+      promptPacket: compressed.packet,
+      message,
+      attachments,
+      tokenCount: compressed.tokenCount,
+    }),
+    history,
+    tokenCount: compressed.tokenCount,
+  };
 }
 
-function normalizeAttachments(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .slice(0, MAX_ATTACHMENTS)
-    .map((attachment) => {
-      const name = typeof attachment?.name === "string" ? attachment.name.trim() : "";
-      const mimeType =
-        typeof attachment?.mimeType === "string"
-          ? attachment.mimeType.trim()
-          : "application/octet-stream";
-      const content = typeof attachment?.content === "string" ? attachment.content.trim() : "";
-
-      if (!name || !content) {
-        return null;
-      }
-
-      return {
-        name,
-        mimeType,
-        content: content.slice(0, MAX_ATTACHMENT_CONTENT_LENGTH),
-      };
-    })
-    .filter((item) => item !== null);
-}
-
-function normalizeAudioBase64(value) {
-  const raw = String(value ?? "").trim();
-  if (!raw) {
-    return "";
-  }
-
-  if (raw.length > MAX_AUDIO_BASE64_LENGTH) {
-    throw new Error("audio-payload-too-large");
-  }
-
-  return raw;
+function sendSseEvent(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
 async function requireCoachUser(req, res, next) {
@@ -450,23 +325,26 @@ export function mountCoachRoutes(app) {
 
   router.post("/chat", requireCoachUser, async (req, res) => {
     try {
-      const message = toSafeMessage(req.body?.message);
-      if (!message) {
-        return res.status(400).json({ message: "message is required." });
+      const requestValidation = safeValidate(CoachChatRequestSchema, req.body ?? {}, "coach chat request");
+      if (!requestValidation.ok) {
+        return res.status(400).json(validationErrorResponse(requestValidation));
       }
 
-      if (message.length > MAX_MESSAGE_LENGTH) {
-        return res
-          .status(400)
-          .json({ message: `message must be <= ${String(MAX_MESSAGE_LENGTH)} characters.` });
-      }
-
+      const chatRequest = requestValidation.data;
       const db = getCoachFirestore();
       const uid = req.coachUser.uid;
-      const windowDays = normalizeWindowDays(req.body?.contextWindowDays);
-      const includeAllHistory = normalizeIncludeAllHistory(req.body?.includeAllHistory);
-      const attachments = normalizeAttachments(req.body?.attachments);
-      const conversationId = await ensureConversation(db, uid, req.body?.conversationId);
+      logger.info(
+        {
+          uid,
+          messageLength: String(chatRequest.message ?? "").length,
+        },
+        "Coach chat request received.",
+      );
+      const windowDays = chatRequest.contextWindowDays;
+      const includeAllHistory = chatRequest.includeAllHistory;
+      const attachments = chatRequest.attachments;
+      const message = chatRequest.message;
+      const conversationId = await ensureConversation(db, uid, chatRequest.conversationId);
       const history = await listConversationMessages(db, uid, conversationId, 10);
       const context = await loadCoachContext(db, uid, { windowDays, includeAllHistory });
       const previousCoachChats = await listRecentConversationContext(db, uid, conversationId);
@@ -475,17 +353,21 @@ export function mountCoachRoutes(app) {
         previousCoachChats,
       };
 
-      const systemPrompt = buildCoachSystemPrompt();
-      const userPrompt = buildCoachUserPrompt({
-        context: contextWithChatHistory,
+      const orchestration = await buildCoachOrchestration({
+        db,
+        uid,
         message,
+        conversationId,
+        history,
+        context: contextWithChatHistory,
+        previousCoachChats,
         attachments,
       });
 
-      const coachResponse = await generateCoachResponse({
-        systemPrompt,
-        userPrompt,
-        history,
+      const coachResponse = await aiProvider.generateCoachText({
+        systemPrompt: orchestration.systemPrompt,
+        userPrompt: orchestration.userPrompt,
+        history: orchestration.history,
       });
 
       let workoutPlan = parseWorkoutPlan(coachResponse.text);
@@ -502,6 +384,16 @@ export function mountCoachRoutes(app) {
         replyText = "You already hit today's workout goal. Prioritize recovery or mobility today, and we can plan the next session when you're ready.";
       }
 
+      const safetyApplied = applySafetyFallback({
+        replyText,
+        workoutPlan,
+        mealPlan,
+        signalPacket: orchestration.signalPacket,
+      });
+      replyText = safetyApplied.replyText;
+      workoutPlan = safetyApplied.workoutPlan ?? null;
+      const safeMealPlan = safetyApplied.mealPlan ?? null;
+
       await appendConversationMessage(db, uid, conversationId, {
         role: "user",
         content: message,
@@ -514,20 +406,202 @@ export function mountCoachRoutes(app) {
         usage: coachResponse.usage,
       });
 
-      return res.json({
+      return sendValidatedJson(res, CoachChatResponseSchema, {
         conversationId,
         reply: replyText,
         model: coachResponse.model,
         usage: coachResponse.usage,
-        contextSignals: contextWithChatHistory.signals,
+        contextSignals: orchestration.signalPacket.signals,
         contextWindow: contextWithChatHistory.window,
         attachmentsUsed: attachments.length,
         workoutPlan: workoutPlan ?? undefined,
-        mealPlan: mealPlan ?? undefined,
-      });
+        mealPlan: safeMealPlan ?? undefined,
+      }, "coach chat response");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown error";
       const statusCode = inferCoachErrorStatus(detail, 500);
+
+      logger.error(
+        {
+          err: errorToLog(error),
+          statusCode,
+        },
+        "Coach chat request failed.",
+      );
+
+      return res.status(statusCode).json({
+        message: messageForCoachStatus(statusCode),
+        detail,
+      });
+    }
+  });
+
+  router.post("/chat/stream", requireCoachUser, async (req, res) => {
+    let clientClosed = false;
+    let headersStarted = false;
+
+    req.on("close", () => {
+      clientClosed = true;
+    });
+
+    try {
+      const requestValidation = safeValidate(CoachChatRequestSchema, req.body ?? {}, "coach stream request");
+      if (!requestValidation.ok) {
+        return res.status(400).json(validationErrorResponse(requestValidation));
+      }
+
+      const chatRequest = requestValidation.data;
+      const db = getCoachFirestore();
+      const uid = req.coachUser.uid;
+      logger.info(
+        {
+          uid,
+          messageLength: String(chatRequest.message ?? "").length,
+        },
+        "Coach stream request received.",
+      );
+      const windowDays = chatRequest.contextWindowDays;
+      const includeAllHistory = chatRequest.includeAllHistory;
+      const attachments = chatRequest.attachments;
+      const message = chatRequest.message;
+      const conversationId = await ensureConversation(db, uid, chatRequest.conversationId);
+      const history = await listConversationMessages(db, uid, conversationId, 10);
+      const context = await loadCoachContext(db, uid, { windowDays, includeAllHistory });
+      const previousCoachChats = await listRecentConversationContext(db, uid, conversationId);
+      const contextWithChatHistory = {
+        ...context,
+        previousCoachChats,
+      };
+
+      const orchestration = await buildCoachOrchestration({
+        db,
+        uid,
+        message,
+        conversationId,
+        history,
+        context: contextWithChatHistory,
+        previousCoachChats,
+        attachments,
+      });
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+      headersStarted = true;
+      res.flushHeaders?.();
+
+      sendSseEvent(res, "metadata", {
+        conversationId,
+        intent: orchestration.intent,
+        contextSignals: orchestration.signalPacket.signals,
+        contextWindow: contextWithChatHistory.window,
+        tokenCount: orchestration.tokenCount,
+      });
+
+      let firstTokenSeen = false;
+      const streamStart = performance.now();
+      const coachResponse = await aiProvider.streamCoachText({
+        systemPrompt: orchestration.systemPrompt,
+        userPrompt: orchestration.userPrompt,
+        history: orchestration.history,
+        onToken: async (token) => {
+          if (clientClosed) {
+            return;
+          }
+          if (!firstTokenSeen) {
+            firstTokenSeen = true;
+            firstTokenLatencyMs
+              .labels(aiProvider.name, "unknown")
+              .observe(performance.now() - streamStart);
+          }
+          sendSseEvent(res, "token", { token });
+        },
+      });
+
+      if (clientClosed) {
+        streamingInterruptions.labels("client-closed").inc();
+        return undefined;
+      }
+
+      let workoutPlan = parseWorkoutPlan(coachResponse.text);
+      const mealPlan = workoutPlan ? null : parseMealPlan(coachResponse.text);
+      let replyText = workoutPlan
+        ? buildWorkoutReply(workoutPlan)
+        : mealPlan
+          ? buildMealReply(mealPlan)
+          : coachResponse.text;
+      const workoutGoalAchievedToday = Boolean(contextWithChatHistory?.recency?.workoutGoalAchievedToday);
+
+      if (workoutPlan && workoutGoalAchievedToday) {
+        workoutPlan = null;
+        replyText = "You already hit today's workout goal. Prioritize recovery or mobility today, and we can plan the next session when you're ready.";
+      }
+
+      const safetyApplied = applySafetyFallback({
+        replyText,
+        workoutPlan,
+        mealPlan,
+        signalPacket: orchestration.signalPacket,
+      });
+      replyText = safetyApplied.replyText;
+      workoutPlan = safetyApplied.workoutPlan ?? null;
+      const safeMealPlan = safetyApplied.mealPlan ?? null;
+
+      await appendConversationMessage(db, uid, conversationId, {
+        role: "user",
+        content: message,
+      });
+
+      await appendConversationMessage(db, uid, conversationId, {
+        role: "assistant",
+        content: replyText,
+        model: coachResponse.model,
+        usage: coachResponse.usage,
+      });
+
+      const finalPayload = {
+        conversationId,
+        reply: replyText,
+        model: coachResponse.model,
+        usage: coachResponse.usage,
+        contextSignals: orchestration.signalPacket.signals,
+        contextWindow: contextWithChatHistory.window,
+        attachmentsUsed: attachments.length,
+        workoutPlan: workoutPlan ?? undefined,
+        mealPlan: safeMealPlan ?? undefined,
+      };
+      const finalValidation = safeValidate(CoachChatResponseSchema, finalPayload, "coach stream final response");
+      sendSseEvent(res, "final", finalValidation.ok ? finalValidation.data : finalPayload);
+      sendSseEvent(res, "done", { ok: true });
+      return res.end();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unknown error";
+      const statusCode = inferCoachErrorStatus(detail, 500);
+
+      logger.error(
+        {
+          err: errorToLog(error),
+          statusCode,
+        },
+        "Coach stream request failed.",
+      );
+
+      if (clientClosed) {
+        streamingInterruptions.labels("client-closed").inc();
+        return undefined;
+      }
+
+      if (headersStarted) {
+        sendSseEvent(res, "error", {
+          message: messageForCoachStatus(statusCode),
+          detail,
+          statusCode,
+        });
+        return res.end();
+      }
 
       return res.status(statusCode).json({
         message: messageForCoachStatus(statusCode),
@@ -538,9 +612,18 @@ export function mountCoachRoutes(app) {
 
   router.get("/home-insights", requireCoachUser, async (req, res) => {
     try {
+      const queryValidation = safeValidate(
+        HomeInsightsQuerySchema,
+        req.query ?? {},
+        "home insights query",
+      );
+      if (!queryValidation.ok) {
+        return res.status(400).json(validationErrorResponse(queryValidation));
+      }
+
       const db = getCoachFirestore();
       const uid = req.coachUser.uid;
-      const windowDays = normalizeWindowDays(req.query?.contextWindowDays);
+      const windowDays = queryValidation.data.contextWindowDays ?? 7;
       const baseContext = await loadCoachContext(db, uid, {
         windowDays,
         includeAllHistory: true,
@@ -559,12 +642,12 @@ export function mountCoachRoutes(app) {
 
       if (cached?.insight) {
         res.set("X-Coach-Insight-Cache", "HIT");
-        return res.json({
+        return sendValidatedJson(res, HomeInsightsResponseSchema, {
           ...cached,
           cached: true,
           contextSignals: context.signals,
           contextWindow: context.window,
-        });
+        }, "cached home insight response");
       }
 
       const insightResponse = await generateHomeInsightsResponse({
@@ -592,7 +675,7 @@ export function mountCoachRoutes(app) {
       await cacheSetJson(cacheKey, payload, HOME_INSIGHT_TTL_SECONDS);
 
       res.set("X-Coach-Insight-Cache", "MISS");
-      return res.json(payload);
+      return sendValidatedJson(res, HomeInsightsResponseSchema, payload, "home insight response");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown error";
       const statusCode = inferCoachErrorStatus(detail, 500);
@@ -606,26 +689,32 @@ export function mountCoachRoutes(app) {
 
   router.post("/transcribe", requireCoachUser, async (req, res) => {
     try {
-      const audioBase64 = normalizeAudioBase64(req.body?.audioBase64);
-      if (!audioBase64) {
-        return res.status(400).json({ message: "audioBase64 is required." });
+      const requestValidation = safeValidate(
+        TranscribeRequestSchema,
+        req.body ?? {},
+        "transcription request",
+      );
+      if (!requestValidation.ok) {
+        const isAudioTooLarge = requestValidation.issues?.some(
+          (issue) => issue.path.join(".") === "audioBase64" && issue.code === "too_big",
+        );
+        return res
+          .status(isAudioTooLarge ? 413 : 400)
+          .json(validationErrorResponse(requestValidation));
       }
 
-      const mimeType =
-        typeof req.body?.mimeType === "string" && req.body.mimeType.trim()
-          ? req.body.mimeType.trim()
-          : "audio/mp4";
+      const { audioBase64, mimeType } = requestValidation.data;
 
       const transcription = await transcribeAudioWithVertex({
         audioBase64,
         mimeType,
       });
 
-      return res.json({
+      return sendValidatedJson(res, TranscribeResponseSchema, {
         text: transcription.text,
         model: transcription.model,
         usage: transcription.usage,
-      });
+      }, "transcription response");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown error";
       const statusCode = /audio-payload-too-large/i.test(detail)
@@ -644,9 +733,9 @@ export function mountCoachRoutes(app) {
       const db = getCoachFirestore();
       const conversations = await listConversations(db, req.coachUser.uid, req.query.limit);
 
-      return res.json({
+      return sendValidatedJson(res, ConversationsResponseSchema, {
         conversations,
-      });
+      }, "conversations response");
     } catch (error) {
       return res.status(500).json({
         message: "Failed to load conversations.",
@@ -670,10 +759,10 @@ export function mountCoachRoutes(app) {
         req.query.limit,
       );
 
-      return res.json({
+      return sendValidatedJson(res, ConversationMessagesResponseSchema, {
         conversationId,
         messages,
-      });
+      }, "conversation messages response");
     } catch (error) {
       return res.status(500).json({
         message: "Failed to load conversation messages.",
@@ -692,10 +781,10 @@ export function mountCoachRoutes(app) {
       const db = getCoachFirestore();
       const deleted = await deleteConversation(db, req.coachUser.uid, conversationId);
 
-      return res.json({
+      return sendValidatedJson(res, DeleteConversationResponseSchema, {
         conversationId,
         deleted,
-      });
+      }, "delete conversation response");
     } catch (error) {
       return res.status(500).json({
         message: "Failed to delete conversation.",

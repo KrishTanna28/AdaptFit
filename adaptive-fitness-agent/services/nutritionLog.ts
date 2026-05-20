@@ -9,6 +9,7 @@ import {
 import { db } from "./firebase";
 import type { FoodSource, MealType } from "./nutritionApi";
 import { toNumber } from "./helperFunctions";
+import { publishIntelligenceEvent } from "./intelligenceEvents";
 
 
 export type LoggedFoodEntry = {
@@ -126,6 +127,15 @@ export async function upsertLoggedFoodEntry(
             { merge: true },
         ),
     ]);
+
+    void publishIntelligenceEvent({
+        type: "meal_logged",
+        payload: {
+            dateKey,
+            entryId: normalized.id,
+            mealType: normalized.mealType,
+        },
+    });
 }
 
 export async function deleteLoggedFoodEntry(
@@ -145,5 +155,13 @@ export async function deleteLoggedFoodEntry(
             { merge: true },
         ),
     ]);
+
+    void publishIntelligenceEvent({
+        type: "meal_logged",
+        payload: {
+            dateKey,
+            entryId,
+        },
+    });
 }
 

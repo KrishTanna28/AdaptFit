@@ -206,9 +206,9 @@ function normalizeMealPlan(value: unknown): CoachMealPlan | null {
       const name = typeof data.name === "string" ? data.name.trim() : "";
       const items = Array.isArray(data.items)
         ? data.items
-            .map((item) => (typeof item === "string" ? item.trim() : ""))
-            .filter(Boolean)
-            .slice(0, MAX_MEAL_ITEMS)
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean)
+          .slice(0, MAX_MEAL_ITEMS)
         : [];
 
       if (!mealType || !name) {
@@ -393,6 +393,7 @@ export default function AICoachScreen() {
   const [messages, setMessages] = useState<CoachChatMessage[]>([]);
   const [draftMessage, setDraftMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [pendingAssistantId, setPendingAssistantId] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isSidebarVisible, setIsSidebarVisible] = useState(false);
@@ -542,6 +543,19 @@ export default function AICoachScreen() {
 
   const appendMessage = (message: CoachChatMessage) => {
     setMessages((prev) => [...prev, message]);
+  };
+
+  const updateMessage = (messageId: string, patch: Partial<CoachChatMessage>) => {
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.id === messageId
+          ? {
+            ...message,
+            ...patch,
+          }
+          : message,
+      ),
+    );
   };
 
   const scrollToBottom = () => {
@@ -1031,6 +1045,15 @@ export default function AICoachScreen() {
     scrollToBottom();
 
     try {
+      const assistantMessageId = `assistant-${Date.now()}`;
+      appendMessage({
+        id: assistantMessageId,
+        role: "assistant",
+        content: "",
+        createdAt: new Date().toISOString(),
+      });
+      setPendingAssistantId(assistantMessageId);
+
       const response = await sendCoachMessage({
         message: outboundPrompt,
         conversationId,
@@ -1042,7 +1065,6 @@ export default function AICoachScreen() {
         setConversationId(response.conversationId);
       }
 
-      const assistantMessageId = `assistant-${Date.now()}`;
       const workoutPlan =
         response.workoutPlan ?? parseWorkoutPlanFromText(response.reply);
       const mealPlan =
@@ -1053,12 +1075,9 @@ export default function AICoachScreen() {
           ? buildWorkoutSummary(workoutPlan)
           : mealPlan && (!cleanedReply || isLikelyJsonText(cleanedReply))
             ? buildMealSummary(mealPlan)
-          : cleanedReply;
-      appendMessage({
-        id: assistantMessageId,
-        role: "assistant",
+            : cleanedReply;
+      updateMessage(assistantMessageId, {
         content: assistantText,
-        createdAt: new Date().toISOString(),
         workoutPlan: workoutPlan ?? undefined,
         mealPlan: mealPlan ?? undefined,
       });
@@ -1075,8 +1094,10 @@ export default function AICoachScreen() {
         title: "Aether unavailable",
         message,
       });
+      setMessages((prev) => prev.filter((item) => item.content || item.role !== "assistant"));
     } finally {
       setIsSending(false);
+      setPendingAssistantId(null);
     }
   };
 
@@ -1241,24 +1262,26 @@ export default function AICoachScreen() {
         />
 
         <Pressable
-          style={[styles.sendButton, !canSend ? styles.sendButtonDisabled : null]}
+          style={[styles.sendButton, !canSend || isSending ? styles.sendButtonDisabled : null]}
           onPress={() => {
+            if (isSending) return;
             handleSend().catch(() => {
               // handled in handleSend
             });
           }}
-          disabled={!canSend}
+          disabled={!canSend || isSending}
         >
-          <SendHorizontal
-            size={18}
-            color={!canSend ? appTheme.colors.textMuted : appTheme.colors.onPrimary}
-            strokeWidth={2.2}
-          />
+          {isSending ? (
+            <ActivityIndicator size="small" color={appTheme.colors.onPrimary} />
+          ) : (
+            <SendHorizontal
+              size={18}
+              color={!canSend ? appTheme.colors.textMuted : appTheme.colors.onPrimary}
+              strokeWidth={2.2}
+            />
+          )}
         </Pressable>
       </View>
-
-      {isRecording ? <Text style={styles.statusText}>Listening... tap stop to transcribe</Text> : null}
-      {isTranscribing ? <Text style={styles.statusText}>Transcribing voice note...</Text> : null}
     </View>
   );
 
@@ -1448,42 +1471,66 @@ export default function AICoachScreen() {
                       style={[
                         styles.messageBubble,
                         isAssistant ? styles.assistantBubble : styles.userBubble,
+                        isAssistant && pendingAssistantId === message.id
+                          ? styles.thinkingBubble
+                          : null,
                       ]}
                     >
-                      <Text style={[styles.messageText, !isAssistant ? styles.userMessageText : null]}>
-                        {message.content}
-                      </Text>
-
-                      {isAssistant ? (
-                        <Pressable
-                          style={styles.speakMessageButton}
-                          onPress={() => {
-                            speakMessage(message.content, message.id);
-                          }}
-                        >
-                          {speakingMessageId === message.id ? (
-                            <VolumeX size={14} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
-                          ) : (
-                            <Volume2 size={14} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
-                          )}
-                          <Text style={styles.speakMessageButtonText}>
-                            {speakingMessageId === message.id ? "Stop" : "Speak"}
+                      {isAssistant && pendingAssistantId === message.id ? (
+                        <>
+                          <ActivityIndicator
+                            size="small"
+                            color={appTheme.colors.primary}
+                          />
+                          <Text style={styles.thinkingText}>
+                            Aether is thinking...
                           </Text>
-                        </Pressable>
-                      ) : null}
+                        </>
+                      ) : (
+                        <>
+                          <Text
+                            style={[
+                              styles.messageText,
+                              !isAssistant ? styles.userMessageText : null,
+                            ]}
+                          >
+                            {message.content}
+                          </Text>
+
+                          {isAssistant ? (
+                            <Pressable
+                              style={styles.speakMessageButton}
+                              onPress={() => {
+                                speakMessage(message.content, message.id);
+                              }}
+                            >
+                              {speakingMessageId === message.id ? (
+                                <VolumeX
+                                  size={14}
+                                  color={appTheme.colors.textSecondary}
+                                  strokeWidth={2.2}
+                                />
+                              ) : (
+                                <Volume2
+                                  size={14}
+                                  color={appTheme.colors.textSecondary}
+                                  strokeWidth={2.2}
+                                />
+                              )}
+
+                              <Text style={styles.speakMessageButtonText}>
+                                {speakingMessageId === message.id
+                                  ? "Stop"
+                                  : "Speak"}
+                              </Text>
+                            </Pressable>
+                          ) : null}
+                        </>
+                      )}
                     </View>
                   </View>
                 );
               })}
-
-              {isSending ? (
-                <View style={[styles.messageRow, styles.assistantRow]}>
-                  <View style={[styles.messageBubble, styles.assistantBubble, styles.thinkingBubble]}>
-                    <ActivityIndicator size="small" color={appTheme.colors.primary} />
-                    <Text style={styles.thinkingText}>Aether is thinking...</Text>
-                  </View>
-                </View>
-              ) : null}
             </ScrollView>
 
             {renderComposer("bottom")}

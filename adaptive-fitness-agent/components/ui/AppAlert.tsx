@@ -77,13 +77,13 @@ const friendlyErrorMap: Array<{
       match:
         /denied access|permission[_\s-]?denied|contact support|forbidden|status:\s*403|api has not been used|disabled/i,
       message:
-        "This AI provider project is blocked. Verify Vertex IAM permissions and billing for the configured service account.",
+        "This AI provider project is blocked. Verify Gemini API access or Gemini Enterprise Agent Platform IAM permissions and billing.",
     },
     {
       match:
-        /unable to authenticate your request|vertex-sdk-api-key-not-supported|no credentials|could not refresh access token/i,
+        /unable to authenticate your request|no credentials|could not refresh access token|genai-api-key-missing|genai-project-id-missing|api key missing|api key not set/i,
       message:
-        "AI provider authentication failed. In nutrition-proxy/.env, set VERTEX_PROJECT_ID, VERTEX_CLIENT_EMAIL, and VERTEX_PRIVATE_KEY (or FIREBASE_* as fallback), or configure GOOGLE_APPLICATION_CREDENTIALS.",
+        "AI provider authentication failed. Set GEMINI_API_KEY or GOOGLE_API_KEY for Gemini API, or configure VERTEX_PROJECT_ID plus service account credentials (VERTEX_CLIENT_EMAIL/PRIVATE_KEY or FIREBASE_*), or GOOGLE_APPLICATION_CREDENTIALS for Gemini Enterprise Agent Platform.",
     },
     {
       match: /play services/i,

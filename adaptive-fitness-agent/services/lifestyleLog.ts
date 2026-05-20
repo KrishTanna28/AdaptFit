@@ -7,6 +7,7 @@ import {
 import { db } from "./firebase";
 import { toNumber, toText } from "./helperFunctions";
 import type { LoggedWorkoutEntry } from "./workoutLog";
+import { publishIntelligenceEvent } from "./intelligenceEvents";
 
 export type WeatherCondition = "cool" | "mild" | "hot" | "humid";
 
@@ -187,6 +188,30 @@ export async function upsertDailyLifestyleLog(
   }
 
   await setDoc(lifestyleDocRef(uid, dateKey), payload, { merge: true });
+
+  if (patch.hydration) {
+    void publishIntelligenceEvent({
+      type: "hydration_updated",
+      payload: {
+        dateKey,
+        intakeMl: normalizeHydration(patch.hydration).intakeMl,
+        goalMl: normalizeHydration(patch.hydration).goalMl,
+      },
+    });
+  }
+
+  if (patch.recovery) {
+    const recovery = normalizeRecovery(patch.recovery);
+    void publishIntelligenceEvent({
+      type: "sleep_updated",
+      payload: {
+        dateKey,
+        sleepHours: recovery.sleepHours ?? undefined,
+        sleepQuality: recovery.sleepQuality ?? undefined,
+        stressLevel: recovery.stressLevel ?? undefined,
+      },
+    });
+  }
 }
 
 export function inferWeatherCondition(input: {

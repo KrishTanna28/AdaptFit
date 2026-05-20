@@ -112,6 +112,20 @@ export async function cacheSetJson(key, value, ttlSeconds) {
   }
 }
 
+export async function cacheDeleteKey(key) {
+  const client = await ensureRedis();
+  if (!client) {
+    return;
+  }
+
+  try {
+    await client.del(key);
+  } catch (error) {
+    console.warn("Redis DEL failed for key:", key);
+    console.warn(error instanceof Error ? error.message : "Unknown Redis DEL error");
+  }
+}
+
 export async function closeRedisCache() {
   if (!redisClient) {
     return;

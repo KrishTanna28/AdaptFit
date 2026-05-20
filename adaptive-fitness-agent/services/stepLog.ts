@@ -1,6 +1,7 @@
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import { toNumber, toText } from "./helperFunctions";
+import { publishIntelligenceEvent } from "./intelligenceEvents";
 
 export type StepLogSource = "health-connect" | "pedometer" | "none";
 
@@ -102,4 +103,12 @@ export async function upsertDailyStepLog(
     },
     { merge: true },
   );
+
+  void publishIntelligenceEvent({
+    type: "profile_updated",
+    payload: {
+      changedFields: ["stepLogs"],
+      dateKey,
+    },
+  });
 }

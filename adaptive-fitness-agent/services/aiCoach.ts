@@ -1,4 +1,5 @@
 import { auth } from "./firebase";
+import { fetchEventSource } from "@microsoft/fetch-event-source";
 
 export type CoachMessageRole = "user" | "assistant";
 
@@ -56,7 +57,7 @@ export type CoachConversationSummary = {
   lastMessageAt: string | null;
 };
 
-type CoachChatResponse = {
+export type CoachChatResponse = {
   conversationId: string;
   reply: string;
   workoutPlan?: CoachWorkoutPlan;
@@ -209,17 +210,17 @@ async function parseApiError(response: Response) {
   const providerAccessDeniedPattern =
     /denied access|permission[_\s-]?denied|contact support|api key not valid|insufficient permissions|forbidden|status:\s*403|api has not been used|disabled/i;
   const providerAuthPattern =
-    /unable to authenticate your request|vertex-sdk-api-key-not-supported|no credentials|could not refresh access token/i;
+    /unable to authenticate your request|no credentials|could not refresh access token|genai-api-key-missing|genai-project-id-missing|gemini-api-key-missing|vertex-project-id-missing|vertex-credentials-missing|api key missing|api key not set/i;
 
   if (providerAccessDeniedPattern.test(composed)) {
     return new Error(
-      "AI provider access is denied for this project. Verify Vertex IAM permissions and billing for the configured service account.",
+      "AI provider access is denied for this project. Verify Gemini API access or Gemini Enterprise Agent Platform IAM permissions and billing.",
     );
   }
 
   if (providerAuthPattern.test(composed)) {
     return new Error(
-      "AI provider authentication failed. For Vertex SDK, configure VERTEX_PROJECT_ID, VERTEX_CLIENT_EMAIL, and VERTEX_PRIVATE_KEY in nutrition-proxy/.env (or FIREBASE_* as fallback), or set GOOGLE_APPLICATION_CREDENTIALS.",
+      "AI provider authentication failed. Set GEMINI_API_KEY or GOOGLE_API_KEY for Gemini API, or configure VERTEX_PROJECT_ID plus service account credentials (VERTEX_CLIENT_EMAIL/PRIVATE_KEY or FIREBASE_*), or GOOGLE_APPLICATION_CREDENTIALS for Gemini Enterprise Agent Platform.",
     );
   }
 
@@ -230,7 +231,7 @@ async function parseApiError(response: Response) {
   }
 
   if (response.status === 429) {
-    return new Error(`${composed} Vertex quota/rate limit was reached. Check billing and usage.`);
+    return new Error(`${composed} Gemini quota/rate limit was reached. Check billing and usage.`);
   }
 
   return new Error(composed);
@@ -273,6 +274,90 @@ export async function sendCoachMessage(input: {
   }
 
   return (await response.json()) as CoachChatResponse;
+}
+
+export async function streamCoachMessage(input: {
+  message: string;
+  conversationId?: string;
+  contextWindowDays?: number;
+  includeAllHistory?: boolean;
+  attachments?: CoachInputAttachment[];
+  signal?: AbortSignal;
+  onToken?: (token: string) => void;
+  onMetadata?: (metadata: unknown) => void;
+}): Promise<CoachChatResponse> {
+  const baseUrl = requireBaseUrl();
+  const idToken = await getAuthToken();
+  let finalPayload: CoachChatResponse | null = null;
+  let streamError: Error | null = null;
+
+  await fetchEventSource(`${baseUrl}/api/coach/chat/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      message: safeTrim(input.message),
+      conversationId: safeTrim(input.conversationId) || undefined,
+      contextWindowDays: input.contextWindowDays,
+      includeAllHistory: input.includeAllHistory ?? true,
+      attachments: Array.isArray(input.attachments)
+        ? input.attachments
+            .map((attachment) => ({
+              name: safeTrim(attachment.name),
+              mimeType: safeTrim(attachment.mimeType) || "text/plain",
+              content: safeTrim(attachment.content),
+            }))
+            .filter((attachment) => attachment.name && attachment.content)
+        : [],
+    }),
+    signal: input.signal,
+    openWhenHidden: true,
+    async onopen(response) {
+      if (response.ok) {
+        return;
+      }
+      throw await parseApiError(response);
+    },
+    onmessage(message) {
+      let data: any = null;
+      try {
+        data = message.data ? JSON.parse(message.data) : null;
+      } catch {
+        data = null;
+      }
+      if (message.event === "token") {
+        const token = safeTrim(data?.token);
+        if (token) input.onToken?.(token);
+        return;
+      }
+      if (message.event === "metadata") {
+        input.onMetadata?.(data);
+        return;
+      }
+      if (message.event === "final") {
+        finalPayload = data as CoachChatResponse;
+        return;
+      }
+      if (message.event === "error") {
+        streamError = new Error(safeTrim(data?.detail) || safeTrim(data?.message) || "Coach stream failed.");
+      }
+    },
+    onerror(error) {
+      throw error;
+    },
+  });
+
+  if (streamError) {
+    throw streamError;
+  }
+
+  if (!finalPayload) {
+    throw new Error("Coach stream ended before a final response was received.");
+  }
+
+  return finalPayload;
 }
 
 export async function getCoachConversationMessages(input: {
