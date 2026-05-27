@@ -62,6 +62,12 @@ export type CoachChatResponse = {
   reply: string;
   workoutPlan?: CoachWorkoutPlan;
   mealPlan?: CoachMealPlan;
+  toolResults?: Array<{
+    toolName: string;
+    status: "success" | "needs_input" | "error";
+    message: string;
+    payload?: Record<string, unknown>;
+  }>;
   model?: string;
   usage?: {
     promptTokenCount: number;

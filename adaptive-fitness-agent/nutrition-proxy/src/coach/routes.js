@@ -9,12 +9,14 @@ import {
   listRecentConversationContext,
   deleteConversation,
 } from "./conversationStore.js";
+import { runCoachCriticRefiner } from "./critic.js";
 import { loadCoachContext } from "./context.js";
 import { getCoachFirestore, verifyCoachIdToken } from "./firebaseAdmin.js";
 import {
   generateHomeInsightsResponse,
   transcribeAudioWithVertex,
 } from "./geminiClient.js";
+import { executeCoachToolActions, hasSuccessfulToolResult } from "./toolRouter.js";
 import {
   buildCacheKey,
   getCachedJson as cacheGetJson,
@@ -26,8 +28,8 @@ import { createAiProvider } from "../ai/providers/index.js";
 import { retrieveSelectiveContext } from "../ai/retrieval/selectiveContext.js";
 import { classifyIntent } from "../ai/routing/intentClassifier.js";
 import { publishIntelligenceEvent } from "../events/eventBus.js";
-import { buildSignalPacketFromContext } from "../intelligence/signalEngine.js";
-import { saveSignalState } from "../intelligence/signalStore.js";
+import { recomputeUserSignalState } from "../intelligence/signalEngine.js";
+import { loadSignalState } from "../intelligence/signalStore.js";
 import { validateCoachPlanSafety } from "../intelligence/validators/safety.js";
 import {
   firstTokenLatencyMs,
@@ -244,23 +246,123 @@ function applySafetyFallback({ replyText, workoutPlan, mealPlan, signalPacket })
   };
 }
 
-async function buildCoachOrchestration({ db, uid, message, conversationId, history, context, previousCoachChats, attachments }) {
-  const intent = classifyIntent(message);
-  const signalResult = await buildSignalPacketFromContext(context);
-  await saveSignalState(
+async function finalizeCoachResponse({ coachResponse, orchestration, message }) {
+  let workoutPlan = parseWorkoutPlan(coachResponse.text);
+  const mealPlan = workoutPlan ? null : parseMealPlan(coachResponse.text);
+  let replyText = workoutPlan
+    ? buildWorkoutReply(workoutPlan)
+    : mealPlan
+      ? buildMealReply(mealPlan)
+      : coachResponse.text;
+  const workoutGoalAchievedToday = Boolean(orchestration.context?.recency?.workoutGoalAchievedToday);
+
+  if (workoutPlan && workoutGoalAchievedToday) {
+    workoutPlan = null;
+    replyText = "You already hit today's workout goal. Prioritize recovery or mobility today, and we can plan the next session when you're ready.";
+  }
+
+  const safetyApplied = applySafetyFallback({
+    replyText,
+    workoutPlan,
+    mealPlan,
+    signalPacket: orchestration.signalPacket,
+  });
+  replyText = safetyApplied.replyText;
+  workoutPlan = safetyApplied.workoutPlan ?? null;
+  const safeMealPlan = safetyApplied.mealPlan ?? null;
+
+  const criticApplied = await runCoachCriticRefiner({
+    aiProvider,
+    message,
+    intent: orchestration.intent,
+    signalPacket: orchestration.signalPacket,
+    toolResults: orchestration.toolResults,
+    replyText,
+    workoutPlan,
+    mealPlan: safeMealPlan,
+  });
+
+  return {
+    replyText: criticApplied.replyText,
+    workoutPlan,
+    mealPlan: safeMealPlan,
+    critic: criticApplied.critic,
+    refined: criticApplied.refined,
+  };
+}
+
+async function loadSignalForChat({ db, uid, windowDays, includeAllHistory, reason }) {
+  const cachedState = await loadSignalState(db, uid, { windowDays });
+  if (cachedState) {
+    return {
+      signalPacket: cachedState.signalPacket,
+      signature: cachedState.signature,
+      cacheSource: cachedState.cacheSource,
+      context: null,
+      recomputed: false,
+    };
+  }
+
+  const recomputeResult = await recomputeUserSignalState(db, uid, {
+    windowDays,
+    includeAllHistory,
+    reason,
+  });
+
+  return {
+    signalPacket: recomputeResult.signalPacket,
+    signature: recomputeResult.signature,
+    cacheSource: "recomputed",
+    context: recomputeResult.context,
+    recomputed: true,
+  };
+}
+
+async function buildCoachOrchestration({ db, uid, message, conversationId, windowDays, includeAllHistory, attachments, intent }) {
+  let signalState = await loadSignalForChat({
     db,
     uid,
-    {
-      signalPacket: signalResult.signalPacket,
-      signature: signalResult.signature,
-      reason: "chat-request",
-    },
-    { windowDays: context.window?.requestedDays ?? 30 },
-  );
+    windowDays,
+    includeAllHistory,
+    reason: "chat-cache-miss",
+  });
+
+  const toolResults = await executeCoachToolActions({
+    db,
+    uid,
+    message,
+    aiProvider,
+    intent,
+  });
+
+  if (hasSuccessfulToolResult(toolResults)) {
+    const refreshed = await recomputeUserSignalState(db, uid, {
+      windowDays,
+      includeAllHistory,
+      reason: "coach-tool-call",
+    });
+    signalState = {
+      signalPacket: refreshed.signalPacket,
+      signature: refreshed.signature,
+      cacheSource: "tool-refresh",
+      context: refreshed.context,
+      recomputed: true,
+    };
+  }
+
+  const context = signalState.context ?? await loadCoachContext(db, uid, { windowDays, includeAllHistory });
+  const previousCoachChats = intent.requiredSources.includes("memory")
+    ? await listRecentConversationContext(db, uid, conversationId)
+    : [];
+  const contextWithChatHistory = {
+    ...context,
+    previousCoachChats,
+  };
+  const history = await listConversationMessages(db, uid, conversationId, 10);
 
   const retrieval = retrieveSelectiveContext({
-    context,
-    signalPacket: signalResult.signalPacket,
+    context: contextWithChatHistory,
+    signalPacket: signalState.signalPacket,
     intent,
     conversationMemory: previousCoachChats,
   });
@@ -279,17 +381,23 @@ async function buildCoachOrchestration({ db, uid, message, conversationId, histo
 
   return {
     intent,
-    signalPacket: signalResult.signalPacket,
-    signalSignature: signalResult.signature,
+    signalPacket: signalState.signalPacket,
+    signalSignature: signalState.signature,
+    signalCacheSource: signalState.cacheSource,
+    signalRecomputed: signalState.recomputed,
     systemPrompt: buildCompressedCoachSystemPrompt(),
     userPrompt: buildCompressedCoachUserPrompt({
       promptPacket: compressed.packet,
       message,
       attachments,
       tokenCount: compressed.tokenCount,
+      toolResults,
     }),
     history,
     tokenCount: compressed.tokenCount,
+    context: contextWithChatHistory,
+    previousCoachChats,
+    toolResults,
   };
 }
 
@@ -344,24 +452,18 @@ export function mountCoachRoutes(app) {
       const includeAllHistory = chatRequest.includeAllHistory;
       const attachments = chatRequest.attachments;
       const message = chatRequest.message;
+      const intent = classifyIntent(message);
       const conversationId = await ensureConversation(db, uid, chatRequest.conversationId);
-      const history = await listConversationMessages(db, uid, conversationId, 10);
-      const context = await loadCoachContext(db, uid, { windowDays, includeAllHistory });
-      const previousCoachChats = await listRecentConversationContext(db, uid, conversationId);
-      const contextWithChatHistory = {
-        ...context,
-        previousCoachChats,
-      };
 
       const orchestration = await buildCoachOrchestration({
         db,
         uid,
         message,
         conversationId,
-        history,
-        context: contextWithChatHistory,
-        previousCoachChats,
+        windowDays,
+        includeAllHistory,
         attachments,
+        intent,
       });
 
       const coachResponse = await aiProvider.generateCoachText({
@@ -370,29 +472,11 @@ export function mountCoachRoutes(app) {
         history: orchestration.history,
       });
 
-      let workoutPlan = parseWorkoutPlan(coachResponse.text);
-      const mealPlan = workoutPlan ? null : parseMealPlan(coachResponse.text);
-      let replyText = workoutPlan
-        ? buildWorkoutReply(workoutPlan)
-        : mealPlan
-          ? buildMealReply(mealPlan)
-          : coachResponse.text;
-      const workoutGoalAchievedToday = Boolean(contextWithChatHistory?.recency?.workoutGoalAchievedToday);
-
-      if (workoutPlan && workoutGoalAchievedToday) {
-        workoutPlan = null;
-        replyText = "You already hit today's workout goal. Prioritize recovery or mobility today, and we can plan the next session when you're ready.";
-      }
-
-      const safetyApplied = applySafetyFallback({
-        replyText,
-        workoutPlan,
-        mealPlan,
-        signalPacket: orchestration.signalPacket,
+      const finalReply = await finalizeCoachResponse({
+        coachResponse,
+        orchestration,
+        message,
       });
-      replyText = safetyApplied.replyText;
-      workoutPlan = safetyApplied.workoutPlan ?? null;
-      const safeMealPlan = safetyApplied.mealPlan ?? null;
 
       await appendConversationMessage(db, uid, conversationId, {
         role: "user",
@@ -401,21 +485,22 @@ export function mountCoachRoutes(app) {
 
       await appendConversationMessage(db, uid, conversationId, {
         role: "assistant",
-        content: replyText,
+        content: finalReply.replyText,
         model: coachResponse.model,
         usage: coachResponse.usage,
       });
 
       return sendValidatedJson(res, CoachChatResponseSchema, {
         conversationId,
-        reply: replyText,
+        reply: finalReply.replyText,
         model: coachResponse.model,
         usage: coachResponse.usage,
         contextSignals: orchestration.signalPacket.signals,
-        contextWindow: contextWithChatHistory.window,
+        contextWindow: orchestration.context.window,
         attachmentsUsed: attachments.length,
-        workoutPlan: workoutPlan ?? undefined,
-        mealPlan: safeMealPlan ?? undefined,
+        workoutPlan: finalReply.workoutPlan ?? undefined,
+        mealPlan: finalReply.mealPlan ?? undefined,
+        toolResults: orchestration.toolResults.length ? orchestration.toolResults : undefined,
       }, "coach chat response");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown error";
@@ -464,24 +549,18 @@ export function mountCoachRoutes(app) {
       const includeAllHistory = chatRequest.includeAllHistory;
       const attachments = chatRequest.attachments;
       const message = chatRequest.message;
+      const intent = classifyIntent(message);
       const conversationId = await ensureConversation(db, uid, chatRequest.conversationId);
-      const history = await listConversationMessages(db, uid, conversationId, 10);
-      const context = await loadCoachContext(db, uid, { windowDays, includeAllHistory });
-      const previousCoachChats = await listRecentConversationContext(db, uid, conversationId);
-      const contextWithChatHistory = {
-        ...context,
-        previousCoachChats,
-      };
 
       const orchestration = await buildCoachOrchestration({
         db,
         uid,
         message,
         conversationId,
-        history,
-        context: contextWithChatHistory,
-        previousCoachChats,
+        windowDays,
+        includeAllHistory,
         attachments,
+        intent,
       });
 
       res.writeHead(200, {
@@ -497,8 +576,9 @@ export function mountCoachRoutes(app) {
         conversationId,
         intent: orchestration.intent,
         contextSignals: orchestration.signalPacket.signals,
-        contextWindow: contextWithChatHistory.window,
+        contextWindow: orchestration.context.window,
         tokenCount: orchestration.tokenCount,
+        toolResults: orchestration.toolResults,
       });
 
       let firstTokenSeen = false;
@@ -526,29 +606,15 @@ export function mountCoachRoutes(app) {
         return undefined;
       }
 
-      let workoutPlan = parseWorkoutPlan(coachResponse.text);
-      const mealPlan = workoutPlan ? null : parseMealPlan(coachResponse.text);
-      let replyText = workoutPlan
-        ? buildWorkoutReply(workoutPlan)
-        : mealPlan
-          ? buildMealReply(mealPlan)
-          : coachResponse.text;
-      const workoutGoalAchievedToday = Boolean(contextWithChatHistory?.recency?.workoutGoalAchievedToday);
-
-      if (workoutPlan && workoutGoalAchievedToday) {
-        workoutPlan = null;
-        replyText = "You already hit today's workout goal. Prioritize recovery or mobility today, and we can plan the next session when you're ready.";
-      }
-
-      const safetyApplied = applySafetyFallback({
-        replyText,
-        workoutPlan,
-        mealPlan,
-        signalPacket: orchestration.signalPacket,
+      const finalReply = await finalizeCoachResponse({
+        coachResponse,
+        orchestration,
+        message,
       });
-      replyText = safetyApplied.replyText;
-      workoutPlan = safetyApplied.workoutPlan ?? null;
-      const safeMealPlan = safetyApplied.mealPlan ?? null;
+
+      if (finalReply.refined) {
+        sendSseEvent(res, "refinement", { reply: finalReply.replyText });
+      }
 
       await appendConversationMessage(db, uid, conversationId, {
         role: "user",
@@ -557,21 +623,22 @@ export function mountCoachRoutes(app) {
 
       await appendConversationMessage(db, uid, conversationId, {
         role: "assistant",
-        content: replyText,
+        content: finalReply.replyText,
         model: coachResponse.model,
         usage: coachResponse.usage,
       });
 
       const finalPayload = {
         conversationId,
-        reply: replyText,
+        reply: finalReply.replyText,
         model: coachResponse.model,
         usage: coachResponse.usage,
         contextSignals: orchestration.signalPacket.signals,
-        contextWindow: contextWithChatHistory.window,
+        contextWindow: orchestration.context.window,
         attachmentsUsed: attachments.length,
-        workoutPlan: workoutPlan ?? undefined,
-        mealPlan: safeMealPlan ?? undefined,
+        workoutPlan: finalReply.workoutPlan ?? undefined,
+        mealPlan: finalReply.mealPlan ?? undefined,
+        toolResults: orchestration.toolResults.length ? orchestration.toolResults : undefined,
       };
       const finalValidation = safeValidate(CoachChatResponseSchema, finalPayload, "coach stream final response");
       sendSseEvent(res, "final", finalValidation.ok ? finalValidation.data : finalPayload);

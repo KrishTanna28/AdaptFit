@@ -4,8 +4,10 @@ import { DateKeySchema, OptionalNonEmptyStringSchema, SerializableRecordSchema }
 export const IntelligenceEventTypeSchema = z.enum([
   "workout_logged",
   "meal_logged",
+  "steps_updated",
   "hydration_updated",
   "sleep_updated",
+  "lifestyle_updated",
   "profile_updated",
   "ai_chat_requested",
 ]);
@@ -41,6 +43,18 @@ export const MealLoggedEventSchema = BaseEventSchema.extend({
     .strict(),
 }).strict();
 
+export const StepsUpdatedEventSchema = BaseEventSchema.extend({
+  type: z.literal("steps_updated"),
+  payload: z
+    .object({
+      dateKey: DateKeySchema,
+      steps: z.coerce.number().int().min(0).optional(),
+      goal: z.coerce.number().int().min(0).optional(),
+      source: OptionalNonEmptyStringSchema(80),
+    })
+    .strict(),
+}).strict();
+
 export const HydrationUpdatedEventSchema = BaseEventSchema.extend({
   type: z.literal("hydration_updated"),
   payload: z
@@ -62,6 +76,16 @@ export const SleepUpdatedEventSchema = BaseEventSchema.extend({
       stressLevel: z.coerce.number().min(1).max(5).optional(),
     })
     .strict(),
+}).strict();
+
+export const LifestyleUpdatedEventSchema = BaseEventSchema.extend({
+  type: z.literal("lifestyle_updated"),
+  payload: z
+    .object({
+      dateKey: DateKeySchema,
+      changedFields: z.array(z.string()).default([]),
+    })
+    .passthrough(),
 }).strict();
 
 export const ProfileUpdatedEventSchema = BaseEventSchema.extend({
@@ -87,8 +111,10 @@ export const AiChatRequestedEventSchema = BaseEventSchema.extend({
 export const QueueEventSchema = z.discriminatedUnion("type", [
   WorkoutLoggedEventSchema,
   MealLoggedEventSchema,
+  StepsUpdatedEventSchema,
   HydrationUpdatedEventSchema,
   SleepUpdatedEventSchema,
+  LifestyleUpdatedEventSchema,
   ProfileUpdatedEventSchema,
   AiChatRequestedEventSchema,
 ]);
@@ -100,4 +126,3 @@ export const QueueJobEnvelopeSchema = z
     metadata: SerializableRecordSchema.default({}),
   })
   .strict();
-

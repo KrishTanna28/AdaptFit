@@ -3,8 +3,10 @@ import { auth } from "./firebase";
 export type IntelligenceEventType =
   | "workout_logged"
   | "meal_logged"
+  | "steps_updated"
   | "hydration_updated"
   | "sleep_updated"
+  | "lifestyle_updated"
   | "profile_updated"
   | "ai_chat_requested";
 
@@ -41,4 +43,3 @@ export async function publishIntelligenceEvent(input: {
     // Event publishing must not break the primary logging UX.
   });
 }
-

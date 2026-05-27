@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import vision from "@google-cloud/vision";
 import express from "express";
 import { createClient } from "redis";
 import { mountCoachRoutes } from "./coach/routes.js";
@@ -19,12 +20,25 @@ const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
 const USDA_API_KEY = (process.env.USDA_API_KEY ?? "").trim();
 const OFF_USER_AGENT = (process.env.OPENFOODFACTS_USER_AGENT ?? "AdaptiveFitnessAgent/1.0 (contact@example.com)").trim();
-const GOOGLE_VISION_API_KEY = (process.env.GOOGLE_VISION_API_KEY ?? "").trim();
+const GOOGLE_VISION_PROJECT_ID = (process.env.GOOGLE_VISION_PROJECT_ID ?? "").trim();
+const GOOGLE_VISION_CLIENT_EMAIL = (process.env.GOOGLE_VISION_CLIENT_EMAIL ?? "").trim();
+const GOOGLE_VISION_PRIVATE_KEY = (process.env.GOOGLE_VISION_PRIVATE_KEY ?? "").trim();
+const GOOGLE_VISION_ENABLED = Boolean(GOOGLE_VISION_CLIENT_EMAIL && GOOGLE_VISION_PRIVATE_KEY);
 const GOOGLE_VISION_MIN_CONFIDENCE = Math.max(
   0,
   Math.min(toNumber(process.env.GOOGLE_VISION_MIN_CONFIDENCE, 0.6), 1),
 );
 const GOOGLE_VISION_MAX_RESULTS = toPositiveInt(process.env.GOOGLE_VISION_MAX_RESULTS, 12);
+
+const visionClient = GOOGLE_VISION_ENABLED
+  ? new vision.ImageAnnotatorClient({
+      projectId: GOOGLE_VISION_PROJECT_ID || undefined,
+      credentials: {
+        client_email: GOOGLE_VISION_CLIENT_EMAIL,
+        private_key: GOOGLE_VISION_PRIVATE_KEY.replace(/\\n/g, "\n"),
+      },
+    })
+  : null;
 
 app.use(express.json({ limit: "15mb" }));
 app.use(metricsMiddleware);
@@ -494,52 +508,27 @@ function normalizeVisionDetections(rawPayload) {
 }
 
 async function runGoogleVisionDetection(input) {
-  if (!GOOGLE_VISION_API_KEY) {
-    const error = new Error("Plate image detection is not configured. Set GOOGLE_VISION_API_KEY in nutrition-proxy/.env.");
+  if (!GOOGLE_VISION_ENABLED || !visionClient) {
+    const error = new Error(
+      "Plate image detection is not configured. Set GOOGLE_VISION_CLIENT_EMAIL and GOOGLE_VISION_PRIVATE_KEY in nutrition-proxy/.env.",
+    );
     error.statusCode = 501;
     throw error;
   }
 
-  const response = await fetch(
-    `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(GOOGLE_VISION_API_KEY)}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        requests: [
-          {
-            image: { content: input.imageBase64 },
-            features: [
-              { type: "OBJECT_LOCALIZATION", maxResults: GOOGLE_VISION_MAX_RESULTS },
-              { type: "LABEL_DETECTION", maxResults: GOOGLE_VISION_MAX_RESULTS },
-            ],
-          },
-        ],
-      }),
-    },
-  );
+  const [result] = await visionClient.annotateImage({
+    image: { content: input.imageBase64 },
+    features: [
+      { type: "OBJECT_LOCALIZATION", maxResults: GOOGLE_VISION_MAX_RESULTS },
+      { type: "LABEL_DETECTION", maxResults: GOOGLE_VISION_MAX_RESULTS },
+    ],
+  });
 
-  if (!response.ok) {
-    let detail = "";
-    try {
-      const payload = await response.json();
-      detail = String(payload?.error?.message ?? "").trim();
-    } catch {
-      detail = "";
-    }
-    throw new Error(detail || `Google Vision detection failed (${response.status}).`);
+  if (result?.error?.message) {
+    throw new Error(String(result.error.message));
   }
 
-  const payload = await response.json();
-  const responseEntry = payload?.responses?.[0];
-  if (responseEntry?.error?.message) {
-    throw new Error(String(responseEntry.error.message));
-  }
-
-  return normalizeVisionDetections(payload);
+  return normalizeVisionDetections({ responses: [result] });
 }
 
 function scaleFoodNutrients(food, grams) {
@@ -1127,7 +1116,7 @@ app.post("/api/foods/plate/analyze", async (req, res) => {
       geminiError = error instanceof Error ? error.message : "Gemini vision failed.";
     }
 
-    if (detections.length === 0 && GOOGLE_VISION_API_KEY && totalWeightGrams > 0) {
+    if (detections.length === 0 && GOOGLE_VISION_ENABLED && totalWeightGrams > 0) {
       detections = await runGoogleVisionDetection({ imageBase64, mimeType });
       detectorMeta = {
         detector: "google-vision",

@@ -23,7 +23,7 @@ export function buildCompressedCoachSystemPrompt() {
   ].join("\n");
 }
 
-export function buildCompressedCoachUserPrompt({ promptPacket, message, attachments = [], tokenCount }) {
+export function buildCompressedCoachUserPrompt({ promptPacket, message, attachments = [], tokenCount, toolResults = [] }) {
   const attachmentSection = attachments.length
     ? [
         "Attachments:",
@@ -37,11 +37,19 @@ export function buildCompressedCoachUserPrompt({ promptPacket, message, attachme
         ),
       ].join("\n\n")
     : "";
+  const toolSection = toolResults.length
+    ? [
+        "Tool results already executed for this user request:",
+        JSON.stringify(toolResults),
+        "Acknowledge successful tool results briefly. If a tool needs more input, ask only for the missing detail.",
+      ].join("\n")
+    : "";
 
   return [
     "Compressed deterministic context packet:",
     JSON.stringify(promptPacket),
     `Estimated context tokens: ${String(tokenCount ?? "unknown")}`,
+    toolSection,
     attachmentSection,
     "User question:",
     message,
@@ -50,4 +58,3 @@ export function buildCompressedCoachUserPrompt({ promptPacket, message, attachme
     .filter(Boolean)
     .join("\n\n");
 }
-

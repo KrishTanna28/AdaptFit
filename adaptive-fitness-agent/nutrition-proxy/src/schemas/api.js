@@ -60,6 +60,18 @@ export const CoachChatResponseSchema = z
     attachmentsUsed: NonNegativeIntSchema,
     workoutPlan: CoachWorkoutPlanSchema.optional(),
     mealPlan: CoachMealPlanSchema.optional(),
+    toolResults: z
+      .array(
+        z
+          .object({
+            toolName: NonEmptyStringSchema.max(80),
+            status: z.enum(["success", "needs_input", "error"]),
+            message: z.string().max(500),
+            payload: z.record(z.string(), z.unknown()).optional(),
+          })
+          .passthrough(),
+      )
+      .optional(),
   })
   .strict();
 

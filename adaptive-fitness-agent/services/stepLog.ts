@@ -105,10 +105,12 @@ export async function upsertDailyStepLog(
   );
 
   void publishIntelligenceEvent({
-    type: "profile_updated",
+    type: "steps_updated",
     payload: {
-      changedFields: ["stepLogs"],
       dateKey,
+      steps: payload.steps,
+      goal: payload.goal,
+      source: payload.source,
     },
   });
 }

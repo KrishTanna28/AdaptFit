@@ -8,6 +8,7 @@
     "start": "node src/server.js"
   },
   "dependencies": {
+    "@google-cloud/vision": "^5.3.6",
     "@google/genai": "^2.1.0",
     "bullmq": "^5.76.8",
     "dotenv": "^16.4.5",

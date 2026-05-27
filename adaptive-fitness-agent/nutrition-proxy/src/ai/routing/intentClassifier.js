@@ -28,7 +28,7 @@ const INTENT_PATTERNS = [
   { intent: "motivation", pattern: /\b(motivat|discipline|stuck|lazy|encourage|mindset)\b/i },
   { intent: "adherence", pattern: /\b(consisten|habit|streak|missed|adherence|routine)\b/i },
   { intent: "hydration", pattern: /\b(water|hydrate|hydration|thirst|fluid)\b/i },
-  { intent: "progress", pattern: /\b(progress|plateau|weight|trend|improve|results|goal)\b/i },
+  { intent: "progress", pattern: /\b(progress|plateau|weight|trend|improve|results|goal|steps?|step count)\b/i },
 ];
 
 const SOURCES_BY_INTENT = {
@@ -63,4 +63,3 @@ export function classifyIntent(message) {
     requiredSources: SOURCES_BY_INTENT[primaryIntent] ?? SOURCES_BY_INTENT.general,
   });
 }
-

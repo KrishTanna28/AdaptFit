@@ -1,9 +1,11 @@
 import { z } from "zod";
 import {
+  DateKeySchema,
   NonEmptyStringSchema,
   NonNegativeIntSchema,
   NonNegativeNumberSchema,
   PositiveIntSchema,
+  RatioSchema,
 } from "./primitives.js";
 
 export const MAX_WORKOUT_TITLE_LENGTH = 80;
@@ -77,6 +79,45 @@ export const HomeInsightSchema = z
   })
   .strict();
 
+export const CoachCriticResultSchema = z
+  .object({
+    approved: z.boolean(),
+    issues: z.array(z.string().trim().min(1).max(160)).max(6).default([]),
+    refinedReply: z.string().trim().max(4000).nullable().optional(),
+  })
+  .strict();
+
+export const CoachToolArgumentsSchema = z
+  .object({
+    dateKey: DateKeySchema.optional(),
+    mealType: CoachMealTypeSchema.optional(),
+    name: z.string().trim().min(1).max(MAX_MEAL_NAME_LENGTH).optional(),
+    calories: NonNegativeNumberSchema.optional(),
+    protein: NonNegativeNumberSchema.optional(),
+    carbs: NonNegativeNumberSchema.optional(),
+    fat: NonNegativeNumberSchema.optional(),
+    fiber: NonNegativeNumberSchema.optional(),
+    workoutName: z.string().trim().min(1).max(120).optional(),
+    workoutMode: z.enum(["cardio", "strength", "sports"]).optional(),
+    durationMin: NonNegativeNumberSchema.optional(),
+    sets: PositiveIntSchema.optional(),
+    reps: PositiveIntSchema.optional(),
+    activeCalories: NonNegativeNumberSchema.optional(),
+    intensity: z.enum(["low", "moderate", "vigorous"]).optional(),
+    steps: NonNegativeIntSchema.optional(),
+    goal: NonNegativeIntSchema.optional(),
+    missingFields: z.array(z.string().trim().min(1).max(60)).max(6).default([]),
+  })
+  .strict();
+
+export const CoachToolDecisionSchema = z
+  .object({
+    toolName: z.enum(["none", "log_meal", "log_workout", "log_steps"]),
+    confidence: RatioSchema,
+    arguments: CoachToolArgumentsSchema.default({}),
+  })
+  .strict();
+
 export const TranscriptionOutputSchema = z
   .object({
     text: NonEmptyStringSchema.max(10000),
@@ -89,6 +130,8 @@ export const AiOutputSchema = z.union([
   CoachWorkoutPlanSchema,
   CoachMealPlanSchema,
   HomeInsightSchema,
+  CoachCriticResultSchema,
+  CoachToolDecisionSchema,
   TranscriptionOutputSchema,
 ]);
 
@@ -211,3 +254,94 @@ export function repairHomeInsight(raw) {
   };
 }
 
+export function repairCoachCriticResult(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  return {
+    approved: Boolean(raw.approved),
+    issues: Array.isArray(raw.issues)
+      ? raw.issues.map((item) => safeString(item, 160)).filter(Boolean).slice(0, 6)
+      : [],
+    refinedReply:
+      typeof raw.refinedReply === "string" && raw.refinedReply.trim()
+        ? safeString(raw.refinedReply, 4000)
+        : null,
+  };
+}
+
+function toOptionalDateKey(value) {
+  const text = safeString(value, 10);
+  return DateKeySchema.safeParse(text).success ? text : undefined;
+}
+
+function toOptionalMealType(value) {
+  const mealType = normalizeMealType(value);
+  return mealType || undefined;
+}
+
+function toOptionalNonNegativeNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return undefined;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    return undefined;
+  }
+  return Math.round(n * 10) / 10;
+}
+
+function toOptionalPositiveInt(value) {
+  const n = toPositiveInt(value);
+  return n ?? undefined;
+}
+
+function toOptionalEnum(value, allowed) {
+  const normalized = safeString(value, 40).toLowerCase();
+  return allowed.includes(normalized) ? normalized : undefined;
+}
+
+export function repairCoachToolDecision(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  const rawArgs = raw.arguments && typeof raw.arguments === "object" && !Array.isArray(raw.arguments)
+    ? raw.arguments
+    : {};
+  const normalizedToolName = safeString(raw.toolName, 40).toLowerCase();
+  const toolName = ["none", "log_meal", "log_workout", "log_steps"].includes(normalizedToolName)
+    ? normalizedToolName
+    : "none";
+  const args = {
+    dateKey: toOptionalDateKey(rawArgs.dateKey),
+    mealType: toOptionalMealType(rawArgs.mealType),
+    name: safeString(rawArgs.name, MAX_MEAL_NAME_LENGTH) || undefined,
+    calories: toOptionalNonNegativeNumber(rawArgs.calories),
+    protein: toOptionalNonNegativeNumber(rawArgs.protein),
+    carbs: toOptionalNonNegativeNumber(rawArgs.carbs),
+    fat: toOptionalNonNegativeNumber(rawArgs.fat),
+    fiber: toOptionalNonNegativeNumber(rawArgs.fiber),
+    workoutName: safeString(rawArgs.workoutName, 120) || undefined,
+    workoutMode: toOptionalEnum(rawArgs.workoutMode, ["cardio", "strength", "sports"]),
+    durationMin: toOptionalNonNegativeNumber(rawArgs.durationMin),
+    sets: toOptionalPositiveInt(rawArgs.sets),
+    reps: toOptionalPositiveInt(rawArgs.reps),
+    activeCalories: toOptionalNonNegativeNumber(rawArgs.activeCalories),
+    intensity: toOptionalEnum(rawArgs.intensity, ["low", "moderate", "vigorous"]),
+    steps: toOptionalPositiveInt(rawArgs.steps),
+    goal: toOptionalPositiveInt(rawArgs.goal),
+    missingFields: Array.isArray(rawArgs.missingFields)
+      ? rawArgs.missingFields.map((item) => safeString(item, 60)).filter(Boolean).slice(0, 6)
+      : [],
+  };
+
+  return {
+    toolName,
+    confidence: Math.min(1, Math.max(0, Number(raw.confidence) || 0)),
+    arguments: Object.fromEntries(
+      Object.entries(args).filter(([_key, value]) => value !== undefined),
+    ),
+  };
+}

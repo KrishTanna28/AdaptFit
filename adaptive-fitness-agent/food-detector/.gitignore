@@ -1,7 +1,0 @@
-.venv/
-.ultralytics/
-.env
-__pycache__/
-.pytest_cache/
-*.pt
-*.onnx

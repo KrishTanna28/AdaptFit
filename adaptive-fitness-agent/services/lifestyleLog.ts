@@ -212,6 +212,16 @@ export async function upsertDailyLifestyleLog(
       },
     });
   }
+
+  if (patch.weather) {
+    void publishIntelligenceEvent({
+      type: "lifestyle_updated",
+      payload: {
+        dateKey,
+        changedFields: ["weather"],
+      },
+    });
+  }
 }
 
 export function inferWeatherCondition(input: {
