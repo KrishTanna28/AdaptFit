@@ -70,6 +70,17 @@ export const CoachMealPlanSchema = z
   })
   .strict();
 
+export const CoachPlanBundleSchema = z
+  .object({
+    reply: z.string().trim().max(1000).optional(),
+    workoutPlan: CoachWorkoutPlanSchema.nullable().optional(),
+    mealPlan: CoachMealPlanSchema.nullable().optional(),
+  })
+  .strict()
+  .refine((value) => Boolean(value.workoutPlan || value.mealPlan), {
+    message: "At least one plan is required.",
+  });
+
 export const HomeInsightSchema = z
   .object({
     title: nonEmptyLimitedString(80),
@@ -127,6 +138,7 @@ export const TranscriptionOutputSchema = z
   .strict();
 
 export const AiOutputSchema = z.union([
+  CoachPlanBundleSchema,
   CoachWorkoutPlanSchema,
   CoachMealPlanSchema,
   HomeInsightSchema,
@@ -236,6 +248,18 @@ export function repairCoachMealPlan(raw) {
   return {
     title: safeString(raw.title, MAX_MEAL_TITLE_LENGTH),
     meals,
+  };
+}
+
+export function repairCoachPlanBundle(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  return {
+    reply: typeof raw.reply === "string" ? safeString(raw.reply, 1000) : undefined,
+    workoutPlan: raw.workoutPlan ? repairCoachWorkoutPlan(raw.workoutPlan) : null,
+    mealPlan: raw.mealPlan ? repairCoachMealPlan(raw.mealPlan) : null,
   };
 }
 

@@ -157,6 +157,11 @@ function normalizeWorkoutPlan(value: unknown): CoachWorkoutPlan | null {
     return null;
   }
 
+  const bundle = value as { workoutPlan?: unknown };
+  if (bundle.workoutPlan) {
+    return normalizeWorkoutPlan(bundle.workoutPlan);
+  }
+
   const raw = value as { title?: unknown; exercises?: unknown };
   const title = typeof raw.title === "string" ? raw.title.trim() : "";
   const exercisesRaw = Array.isArray(raw.exercises) ? raw.exercises : [];
@@ -190,6 +195,11 @@ function normalizeWorkoutPlan(value: unknown): CoachWorkoutPlan | null {
 function normalizeMealPlan(value: unknown): CoachMealPlan | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
+  }
+
+  const bundle = value as { mealPlan?: unknown };
+  if (bundle.mealPlan) {
+    return normalizeMealPlan(bundle.mealPlan);
   }
 
   const raw = value as { title?: unknown; meals?: unknown };
@@ -284,6 +294,20 @@ function buildMealSummary(plan: CoachMealPlan) {
   return `Meal plan ready: ${plan.title}. Tap "Log All Meals" or log an individual meal to add ${String(
     count,
   )} ${label}.`;
+}
+
+function buildCombinedPlanSummary(input: {
+  workoutPlan?: CoachWorkoutPlan | null;
+  mealPlan?: CoachMealPlan | null;
+}) {
+  const parts = [];
+  if (input.workoutPlan) {
+    parts.push(buildWorkoutSummary(input.workoutPlan));
+  }
+  if (input.mealPlan) {
+    parts.push(buildMealSummary(input.mealPlan));
+  }
+  return parts.join(" ");
 }
 
 function estimateStrengthDurationMin(input: {
@@ -408,6 +432,16 @@ export default function AICoachScreen() {
 
   const [animatedTitle, setAnimatedTitle] = useState("");
   const [animatedSubtitle, setAnimatedSubtitle] = useState("");
+
+  const [sidebarHeight, setSidebarHeight] = useState(0);
+
+  const SKELETON_ITEM_HEIGHT = 56; // row height + spacing
+  const MIN_SKELETONS = 10;
+
+  const skeletonCount = Math.max(
+    MIN_SKELETONS,
+    Math.floor(sidebarHeight / SKELETON_ITEM_HEIGHT) || MIN_SKELETONS
+  );
 
   useEffect(() => {
     return () => {
@@ -1068,14 +1102,12 @@ export default function AICoachScreen() {
       const workoutPlan =
         response.workoutPlan ?? parseWorkoutPlanFromText(response.reply);
       const mealPlan =
-        workoutPlan ? null : response.mealPlan ?? parseMealPlanFromText(response.reply);
+        response.mealPlan ?? parseMealPlanFromText(response.reply);
       const cleanedReply = normalizeAssistantReply(response.reply);
       const assistantText =
-        workoutPlan && (!cleanedReply || isLikelyJsonText(cleanedReply))
-          ? buildWorkoutSummary(workoutPlan)
-          : mealPlan && (!cleanedReply || isLikelyJsonText(cleanedReply))
-            ? buildMealSummary(mealPlan)
-            : cleanedReply;
+        (workoutPlan || mealPlan) && (!cleanedReply || isLikelyJsonText(cleanedReply))
+          ? buildCombinedPlanSummary({ workoutPlan, mealPlan })
+          : cleanedReply;
       updateMessage(assistantMessageId, {
         content: assistantText,
         workoutPlan: workoutPlan ?? undefined,
@@ -1132,7 +1164,7 @@ export default function AICoachScreen() {
 
           {isLoadingConversations ? (
             <View style={styles.sidebarSkeletonList}>
-              {[0, 1, 2].map((index) => (
+              {Array.from({ length: skeletonCount }).map((_, index) => (
                 <View key={index} style={styles.sidebarSkeletonItem}>
                   <AppSkeleton width="72%" height={16} borderRadius={8} variant="activity" />
                   <AppSkeleton width="92%" height={12} borderRadius={8} variant="activity" />
@@ -1140,91 +1172,91 @@ export default function AICoachScreen() {
               ))}
             </View>
           ) : conversationListError ? (
-            <View style={styles.sidebarState}>
-              <Text style={styles.sidebarStateText}>{conversationListError}</Text>
-              <Pressable
-                style={styles.retryButton}
-                onPress={() => {
-                  loadConversations().catch(() => {
-                    // handled in loadConversations
-                  });
-                }}
-              >
-                <Text style={styles.retryButtonText}>Retry</Text>
-              </Pressable>
-            </View>
-          ) : conversations.length ? (
-            <ScrollView
-              style={styles.conversationList}
-              contentContainerStyle={styles.conversationListContent}
-              showsVerticalScrollIndicator={false}
+          <View style={styles.sidebarState}>
+            <Text style={styles.sidebarStateText}>{conversationListError}</Text>
+            <Pressable
+              style={styles.retryButton}
+              onPress={() => {
+                loadConversations().catch(() => {
+                  // handled in loadConversations
+                });
+              }}
             >
-              {conversations.map((conversation) => {
-                const isCurrent = conversation.id === conversationId;
-                const isSelecting = selectingConversationId === conversation.id;
-                const isDeleting = deletingConversationId === conversation.id;
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </Pressable>
+          </View>
+          ) : conversations.length ? (
+          <ScrollView
+            style={styles.conversationList}
+            contentContainerStyle={styles.conversationListContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {conversations.map((conversation) => {
+              const isCurrent = conversation.id === conversationId;
+              const isSelecting = selectingConversationId === conversation.id;
+              const isDeleting = deletingConversationId === conversation.id;
 
-                return (
-                  <View
-                    key={conversation.id}
-                    style={[
-                      styles.conversationItem,
-                      isCurrent ? styles.conversationItemActive : null,
-                    ]}
+              return (
+                <View
+                  key={conversation.id}
+                  style={[
+                    styles.conversationItem,
+                    isCurrent ? styles.conversationItemActive : null,
+                  ]}
+                >
+                  <Pressable
+                    style={styles.conversationOpenArea}
+                    onPress={() => {
+                      handleSelectConversation(conversation).catch(() => {
+                        // handled in handleSelectConversation
+                      });
+                    }}
+                    disabled={Boolean(selectingConversationId || deletingConversationId)}
                   >
-                    <Pressable
-                      style={styles.conversationOpenArea}
-                      onPress={() => {
-                        handleSelectConversation(conversation).catch(() => {
-                          // handled in handleSelectConversation
-                        });
-                      }}
-                      disabled={Boolean(selectingConversationId || deletingConversationId)}
-                    >
-                      <View style={styles.conversationItemHeader}>
-                        <Text
-                          style={[
-                            styles.conversationTitle,
-                            isCurrent ? styles.conversationTitleActive : null,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {conversation.title || "Aether chat"}
-                        </Text>
-                        {isSelecting ? (
-                          <ActivityIndicator size="small" color={appTheme.colors.primary} />
-                        ) : (
-                          <Text style={styles.conversationDate}>
-                            {formatConversationDate(conversation.lastMessageAt)}
-                          </Text>
-                        )}
-                      </View>
-                      <Text style={styles.conversationPreview} numberOfLines={2}>
-                        {conversation.lastMessagePreview || "Open this conversation"}
+                    <View style={styles.conversationItemHeader}>
+                      <Text
+                        style={[
+                          styles.conversationTitle,
+                          isCurrent ? styles.conversationTitleActive : null,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {conversation.title || "Aether chat"}
                       </Text>
-                    </Pressable>
-
-                    <Pressable
-                      style={styles.conversationDeleteButton}
-                      onPress={() => confirmDeleteConversation(conversation)}
-                      disabled={Boolean(deletingConversationId)}
-                      accessibilityRole="button"
-                      accessibilityLabel="Delete saved chat"
-                    >
-                      {isDeleting ? (
-                        <ActivityIndicator size="small" color={appTheme.colors.danger} />
+                      {isSelecting ? (
+                        <ActivityIndicator size="small" color={appTheme.colors.primary} />
                       ) : (
-                        <Trash2 size={16} color={appTheme.colors.textMuted} strokeWidth={2.2} />
+                        <Text style={styles.conversationDate}>
+                          {formatConversationDate(conversation.lastMessageAt)}
+                        </Text>
                       )}
-                    </Pressable>
-                  </View>
-                );
-              })}
-            </ScrollView>
+                    </View>
+                    <Text style={styles.conversationPreview} numberOfLines={2}>
+                      {conversation.lastMessagePreview || "Open this conversation"}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.conversationDeleteButton}
+                    onPress={() => confirmDeleteConversation(conversation)}
+                    disabled={Boolean(deletingConversationId)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete saved chat"
+                  >
+                    {isDeleting ? (
+                      <ActivityIndicator size="small" color={appTheme.colors.danger} />
+                    ) : (
+                      <Trash2 size={16} color={appTheme.colors.textMuted} strokeWidth={2.2} />
+                    )}
+                  </Pressable>
+                </View>
+              );
+            })}
+          </ScrollView>
           ) : (
-            <View style={styles.sidebarState}>
-              <Text style={styles.sidebarStateText}>Your Aether chats will appear here.</Text>
-            </View>
+          <View style={styles.sidebarState}>
+            <Text style={styles.sidebarStateText}>Your Aether chats will appear here.</Text>
+          </View>
           )}
         </Animated.View>
       </View>
@@ -1331,132 +1363,139 @@ export default function AICoachScreen() {
                 const workoutPlan = isAssistant ? message.workoutPlan : undefined;
                 const mealPlan = isAssistant ? message.mealPlan : undefined;
 
-                if (workoutPlan) {
-                  const isLoadingPlan = loadingWorkoutMessageId === message.id;
+                if (workoutPlan || mealPlan) {
+                  const isLoadingWorkoutPlan = loadingWorkoutMessageId === message.id;
+                  const isLoadingMealPlan = loadingMealMessageId === message.id;
+                  const showSharedPlanReply = Boolean(workoutPlan && mealPlan && message.content);
+                  const showCardSubtitle = Boolean(message.content && !showSharedPlanReply);
 
                   return (
                     <View key={message.id} style={[styles.messageRow, styles.assistantRow]}>
-                      <View style={styles.workoutCard}>
-                        <View style={styles.workoutCardHeader}>
-                          <Text style={styles.workoutCardEyebrow}>Aether workout</Text>
-                          <Text style={styles.workoutCardTitle}>{workoutPlan.title}</Text>
-                          {message.content ? (
-                            <Text style={styles.workoutCardSubtitle}>{message.content}</Text>
-                          ) : null}
-                        </View>
+                      <View style={styles.planCardStack}>
+                        {showSharedPlanReply ? (
+                          <View style={[styles.messageBubble, styles.assistantBubble, styles.planStackCard]}>
+                            <Text style={styles.messageText}>{message.content}</Text>
+                          </View>
+                        ) : null}
 
-                        <View style={styles.workoutExerciseList}>
-                          {workoutPlan.exercises.map((exercise, index) => {
-                            const isLast = index === workoutPlan.exercises.length - 1;
-                            return (
-                              <View
-                                key={`${exercise.name}-${String(index)}`}
-                                style={[
-                                  styles.workoutExerciseRow,
-                                  isLast ? { borderBottomWidth: 0, paddingBottom: 0 } : null,
-                                ]}
-                              >
-                                <Text style={styles.workoutExerciseName}>{exercise.name}</Text>
-                                <Text style={styles.workoutExerciseMeta}>
-                                  {exercise.sets} x {exercise.reps}
-                                </Text>
-                              </View>
-                            );
-                          })}
-                        </View>
+                        {workoutPlan ? (
+                          <View style={[styles.workoutCard, styles.planStackCard]}>
+                            <View style={styles.workoutCardHeader}>
+                              <Text style={styles.workoutCardEyebrow}>Aether workout</Text>
+                              <Text style={styles.workoutCardTitle}>{workoutPlan.title}</Text>
+                              {showCardSubtitle ? (
+                                <Text style={styles.workoutCardSubtitle}>{message.content}</Text>
+                              ) : null}
+                            </View>
 
-                        <View style={styles.workoutCardFooter}>
-                          <AppButton
-                            title={isLoadingPlan ? "Loading..." : "Load Workout to Today"}
-                            onPress={() => {
-                              handleLoadWorkoutPlan(workoutPlan, message.id).catch(() => {
-                                // handled in handleLoadWorkoutPlan
-                              });
-                            }}
-                            loading={isLoadingPlan}
-                            disabled={isLoadingPlan}
-                          />
-                        </View>
-                      </View>
-                    </View>
-                  );
-                }
-
-                if (mealPlan) {
-                  const isLoadingPlan = loadingMealMessageId === message.id;
-
-                  return (
-                    <View key={message.id} style={[styles.messageRow, styles.assistantRow]}>
-                      <View style={styles.workoutCard}>
-                        <View style={styles.workoutCardHeader}>
-                          <Text style={styles.workoutCardEyebrow}>Aether meals</Text>
-                          <Text style={styles.workoutCardTitle}>{mealPlan.title}</Text>
-                          {message.content ? (
-                            <Text style={styles.workoutCardSubtitle}>{message.content}</Text>
-                          ) : null}
-                        </View>
-
-                        <View style={styles.workoutExerciseList}>
-                          {mealPlan.meals.map((meal, index) => {
-                            const isLast = index === mealPlan.meals.length - 1;
-                            const macroText = `${Math.round(meal.calories)} kcal | P ${meal.protein}g | C ${meal.carbs}g | F ${meal.fat}g`;
-
-                            return (
-                              <View
-                                key={`${meal.mealType}-${meal.name}-${String(index)}`}
-                                style={[
-                                  styles.mealPlanRow,
-                                  isLast ? { borderBottomWidth: 0, paddingBottom: 0 } : null,
-                                ]}
-                              >
-                                <View style={styles.mealPlanTextWrap}>
-                                  <Text style={styles.workoutExerciseMeta}>
-                                    {MEAL_LABELS[meal.mealType]}
-                                  </Text>
-                                  <Text style={styles.workoutExerciseName}>{meal.name}</Text>
-                                  {meal.items.length ? (
-                                    <Text style={styles.workoutCardSubtitle} numberOfLines={2}>
-                                      {meal.items.join(", ")}
+                            <View style={styles.workoutExerciseList}>
+                              {workoutPlan.exercises.map((exercise, index) => {
+                                const isLast = index === workoutPlan.exercises.length - 1;
+                                return (
+                                  <View
+                                    key={`${exercise.name}-${String(index)}`}
+                                    style={[
+                                      styles.workoutExerciseRow,
+                                      isLast ? { borderBottomWidth: 0, paddingBottom: 0 } : null,
+                                    ]}
+                                  >
+                                    <Text style={styles.workoutExerciseName}>{exercise.name}</Text>
+                                    <Text style={styles.workoutExerciseMeta}>
+                                      {exercise.sets} x {exercise.reps}
                                     </Text>
-                                  ) : null}
-                                  <Text style={styles.workoutExerciseMeta}>{macroText}</Text>
-                                </View>
+                                  </View>
+                                );
+                              })}
+                            </View>
 
-                                <Pressable
-                                  style={[
-                                    styles.mealLogButton,
-                                    isLoadingPlan ? styles.mealLogButtonDisabled : null,
-                                  ]}
-                                  disabled={isLoadingPlan}
-                                  onPress={() => {
-                                    handleLoadMealPlan(mealPlan, message.id, index).catch(() => {
-                                      // handled in handleLoadMealPlan
-                                    });
-                                  }}
-                                >
-                                  {isLoadingPlan ? (
-                                    <ActivityIndicator size="small" color={appTheme.colors.primary} />
-                                  ) : (
-                                    <Text style={styles.mealLogButtonText}>Log</Text>
-                                  )}
-                                </Pressable>
-                              </View>
-                            );
-                          })}
-                        </View>
+                            <View style={styles.workoutCardFooter}>
+                              <AppButton
+                                title={isLoadingWorkoutPlan ? "Loading..." : "Load Workout to Today"}
+                                onPress={() => {
+                                  handleLoadWorkoutPlan(workoutPlan, message.id).catch(() => {
+                                    // handled in handleLoadWorkoutPlan
+                                  });
+                                }}
+                                loading={isLoadingWorkoutPlan}
+                                disabled={isLoadingWorkoutPlan}
+                              />
+                            </View>
+                          </View>
+                        ) : null}
 
-                        <View style={styles.workoutCardFooter}>
-                          <AppButton
-                            title={isLoadingPlan ? "Logging..." : "Log All Meals"}
-                            onPress={() => {
-                              handleLoadMealPlan(mealPlan, message.id).catch(() => {
-                                // handled in handleLoadMealPlan
-                              });
-                            }}
-                            loading={isLoadingPlan}
-                            disabled={isLoadingPlan}
-                          />
-                        </View>
+                        {mealPlan ? (
+                          <View style={[styles.workoutCard, styles.planStackCard]}>
+                            <View style={styles.workoutCardHeader}>
+                              <Text style={styles.workoutCardEyebrow}>Aether meals</Text>
+                              <Text style={styles.workoutCardTitle}>{mealPlan.title}</Text>
+                              {showCardSubtitle ? (
+                                <Text style={styles.workoutCardSubtitle}>{message.content}</Text>
+                              ) : null}
+                            </View>
+
+                            <View style={styles.workoutExerciseList}>
+                              {mealPlan.meals.map((meal, index) => {
+                                const isLast = index === mealPlan.meals.length - 1;
+                                const macroText = `${Math.round(meal.calories)} kcal | P ${meal.protein}g | C ${meal.carbs}g | F ${meal.fat}g`;
+
+                                return (
+                                  <View
+                                    key={`${meal.mealType}-${meal.name}-${String(index)}`}
+                                    style={[
+                                      styles.mealPlanRow,
+                                      isLast ? { borderBottomWidth: 0, paddingBottom: 0 } : null,
+                                    ]}
+                                  >
+                                    <View style={styles.mealPlanTextWrap}>
+                                      <Text style={styles.workoutExerciseMeta}>
+                                        {MEAL_LABELS[meal.mealType]}
+                                      </Text>
+                                      <Text style={styles.workoutExerciseName}>{meal.name}</Text>
+                                      {meal.items.length ? (
+                                        <Text style={styles.workoutCardSubtitle} numberOfLines={2}>
+                                          {meal.items.join(", ")}
+                                        </Text>
+                                      ) : null}
+                                      <Text style={styles.workoutExerciseMeta}>{macroText}</Text>
+                                    </View>
+
+                                    <Pressable
+                                      style={[
+                                        styles.mealLogButton,
+                                        isLoadingMealPlan ? styles.mealLogButtonDisabled : null,
+                                      ]}
+                                      disabled={isLoadingMealPlan}
+                                      onPress={() => {
+                                        handleLoadMealPlan(mealPlan, message.id, index).catch(() => {
+                                          // handled in handleLoadMealPlan
+                                        });
+                                      }}
+                                    >
+                                      {isLoadingMealPlan ? (
+                                        <ActivityIndicator size="small" color={appTheme.colors.primary} />
+                                      ) : (
+                                        <Text style={styles.mealLogButtonText}>Log</Text>
+                                      )}
+                                    </Pressable>
+                                  </View>
+                                );
+                              })}
+                            </View>
+
+                            <View style={styles.workoutCardFooter}>
+                              <AppButton
+                                title={isLoadingMealPlan ? "Logging..." : "Log All Meals"}
+                                onPress={() => {
+                                  handleLoadMealPlan(mealPlan, message.id).catch(() => {
+                                    // handled in handleLoadMealPlan
+                                  });
+                                }}
+                                loading={isLoadingMealPlan}
+                                disabled={isLoadingMealPlan}
+                              />
+                            </View>
+                          </View>
+                        ) : null}
                       </View>
                     </View>
                   );

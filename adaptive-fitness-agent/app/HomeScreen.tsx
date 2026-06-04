@@ -646,7 +646,7 @@ export default function HomeScreen({
             <View style={styles.metricsGrid}>
               <View style={styles.metricItem}>
                 {liveStepCounter.isLoading ? (
-                  <AppSkeleton width={92} height={20} borderRadius={8} variant="home" />
+                  <AppSkeleton width={76} height={20} borderRadius={8} variant="home" />
                 ) : (
                   <Text style={styles.metricValue}>{stepCountText}</Text>
                 )}
@@ -654,7 +654,7 @@ export default function HomeScreen({
               </View>
               <View style={[styles.metricItem, styles.metricItemDivider]}>
                 {isLoadingCaloriesIntake ? (
-                  <AppSkeleton width={108} height={20} borderRadius={8} variant="home" />
+                  <AppSkeleton width={76} height={20} borderRadius={8} variant="home" />
                 ) : (
                   <Text style={styles.metricValue}>{totalCaloriesBurned} kcal</Text>
                 )}

@@ -48,14 +48,17 @@ import {
   TranscribeResponseSchema,
 } from "../schemas/api.js";
 import {
+  CoachPlanBundleSchema,
   CoachMealPlanSchema,
   CoachWorkoutPlanSchema,
   HomeInsightSchema,
+  repairCoachPlanBundle,
   repairCoachMealPlan,
   repairCoachWorkoutPlan,
   repairHomeInsight,
 } from "../schemas/aiOutputs.js";
 import {
+  extractJsonText,
   parseLlmJsonWithSchema,
   safeValidate,
   sendValidatedJson,
@@ -145,6 +148,33 @@ function parseMealPlan(text) {
   });
 }
 
+function parsePlanBundle(text) {
+  const cleaned = extractJsonText(text);
+  if (!cleaned) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    if (!("workoutPlan" in parsed) && !("mealPlan" in parsed)) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  return parseLlmJsonWithSchema({
+    text,
+    schema: CoachPlanBundleSchema,
+    repair: repairCoachPlanBundle,
+    fallback: null,
+    label: "coach-plan-bundle",
+  });
+}
+
 function parseHomeInsights(text) {
   return parseLlmJsonWithSchema({
     text,
@@ -229,6 +259,19 @@ function buildMealReply(mealPlan) {
   )} ${label} to today's nutrition log.`;
 }
 
+function buildCombinedPlanReply({ workoutPlan, mealPlan, modelReply }) {
+  const fallbackParts = [];
+  if (workoutPlan) {
+    fallbackParts.push(buildWorkoutReply(workoutPlan));
+  }
+  if (mealPlan) {
+    fallbackParts.push(buildMealReply(mealPlan));
+  }
+
+  const reply = String(modelReply ?? "").trim();
+  return reply || fallbackParts.join(" ");
+}
+
 function applySafetyFallback({ replyText, workoutPlan, mealPlan, signalPacket }) {
   const safety = validateCoachPlanSafety({ signalPacket, workoutPlan, mealPlan });
   if (safety.allowed) {
@@ -247,18 +290,31 @@ function applySafetyFallback({ replyText, workoutPlan, mealPlan, signalPacket })
 }
 
 async function finalizeCoachResponse({ coachResponse, orchestration, message }) {
-  let workoutPlan = parseWorkoutPlan(coachResponse.text);
-  const mealPlan = workoutPlan ? null : parseMealPlan(coachResponse.text);
-  let replyText = workoutPlan
-    ? buildWorkoutReply(workoutPlan)
-    : mealPlan
-      ? buildMealReply(mealPlan)
-      : coachResponse.text;
+  const planBundle = parsePlanBundle(coachResponse.text);
+  let workoutPlan = null;
+  let mealPlan = null;
+
+  if (planBundle) {
+    workoutPlan = planBundle.workoutPlan ?? null;
+    mealPlan = planBundle.mealPlan ?? null;
+  } else {
+    workoutPlan = parseWorkoutPlan(coachResponse.text);
+    mealPlan = parseMealPlan(coachResponse.text);
+  }
+  let replyText = workoutPlan || mealPlan
+    ? buildCombinedPlanReply({
+        workoutPlan,
+        mealPlan,
+        modelReply: planBundle?.reply,
+      })
+    : coachResponse.text;
   const workoutGoalAchievedToday = Boolean(orchestration.context?.recency?.workoutGoalAchievedToday);
 
   if (workoutPlan && workoutGoalAchievedToday) {
     workoutPlan = null;
-    replyText = "You already hit today's workout goal. Prioritize recovery or mobility today, and we can plan the next session when you're ready.";
+    replyText = mealPlan
+      ? buildMealReply(mealPlan)
+      : "You already hit today's workout goal. Prioritize recovery or mobility today, and we can plan the next session when you're ready.";
   }
 
   const safetyApplied = applySafetyFallback({
@@ -269,7 +325,7 @@ async function finalizeCoachResponse({ coachResponse, orchestration, message }) 
   });
   replyText = safetyApplied.replyText;
   workoutPlan = safetyApplied.workoutPlan ?? null;
-  const safeMealPlan = safetyApplied.mealPlan ?? null;
+  mealPlan = safetyApplied.mealPlan ?? null;
 
   const criticApplied = await runCoachCriticRefiner({
     aiProvider,
@@ -279,13 +335,13 @@ async function finalizeCoachResponse({ coachResponse, orchestration, message }) 
     toolResults: orchestration.toolResults,
     replyText,
     workoutPlan,
-    mealPlan: safeMealPlan,
+    mealPlan,
   });
 
   return {
     replyText: criticApplied.replyText,
     workoutPlan,
-    mealPlan: safeMealPlan,
+    mealPlan,
     critic: criticApplied.critic,
     refined: criticApplied.refined,
   };
@@ -452,7 +508,7 @@ export function mountCoachRoutes(app) {
       const includeAllHistory = chatRequest.includeAllHistory;
       const attachments = chatRequest.attachments;
       const message = chatRequest.message;
-      const intent = classifyIntent(message);
+      const intent = await classifyIntent(message, { aiProvider });
       const conversationId = await ensureConversation(db, uid, chatRequest.conversationId);
 
       const orchestration = await buildCoachOrchestration({
@@ -549,7 +605,7 @@ export function mountCoachRoutes(app) {
       const includeAllHistory = chatRequest.includeAllHistory;
       const attachments = chatRequest.attachments;
       const message = chatRequest.message;
-      const intent = classifyIntent(message);
+      const intent = await classifyIntent(message, { aiProvider });
       const conversationId = await ensureConversation(db, uid, chatRequest.conversationId);
 
       const orchestration = await buildCoachOrchestration({

@@ -8,6 +8,11 @@ import { mountFormAnalysisRoutes } from "./formAnalysis/routes.js";
 import { mountHomeRoutes } from "./home/routes.js";
 import { mountEmailOtpRoutes } from "./auth/emailOtp.js";
 import { mountEventRoutes } from "./events/routes.js";
+import {
+  mountNotificationRoutes,
+  startNotificationCronJobs,
+  stopNotificationCronJobs,
+} from "./notifications/routes.js";
 import { mountMetricsEndpoint, metricsMiddleware } from "./observability/metrics.js";
 import { logger } from "./observability/logger.js";
 import { closeIntelligenceQueue } from "./queues/intelligenceQueue.js";
@@ -1235,8 +1240,10 @@ mountHomeRoutes(app);
 mountFormAnalysisRoutes(app);
 mountEmailOtpRoutes(app);
 mountEventRoutes(app);
+mountNotificationRoutes(app);
 mountMetricsEndpoint(app);
 startIntelligenceWorker();
+startNotificationCronJobs();
 
 app.listen(PORT, () => {
   logger.info({ port: PORT }, "Nutrition proxy running.");
@@ -1252,6 +1259,7 @@ async function gracefulShutdown(signal) {
 
     }
   }
+  stopNotificationCronJobs();
   await closeIntelligenceWorker();
   await closeIntelligenceQueue();
   await closeQueueConnection();

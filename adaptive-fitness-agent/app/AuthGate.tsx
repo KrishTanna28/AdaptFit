@@ -7,6 +7,7 @@ import LoginScreen from "./LoginScreen";
 import PasswordSetupScreen from "./PasswordSetupScreen";
 import LogoSplash from "../components/ui/LogoSplash";
 import { useAuthUser } from "../hooks/useAuthUser";
+import { registerExpoPushToken } from "../services/pushNotifications";
 import { needsEmailVerification, needsPasswordSetup } from "../utils/authRouting";
 import { auth } from "../services/firebase";
 
@@ -21,6 +22,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function AuthGate() {
   const { user, loading } = useAuthUser();
   const emailVerificationRequired = needsEmailVerification(user);
+  const passwordSetupRequired = needsPasswordSetup(user);
 
   useEffect(() => {
     if (emailVerificationRequired) {
@@ -28,20 +30,26 @@ export default function AuthGate() {
     }
   }, [emailVerificationRequired]);
 
+  useEffect(() => {
+    if (!loading && user && !emailVerificationRequired && !passwordSetupRequired) {
+      registerExpoPushToken(user).catch(() => {});
+    }
+  }, [emailVerificationRequired, loading, passwordSetupRequired, user]);
+
   if (loading) {
     return <LogoSplash />;
   }
 
   const routeState = !user || emailVerificationRequired
     ? "guest"
-    : needsPasswordSetup(user)
+    : passwordSetupRequired
       ? "password-setup"
       : "authenticated";
 
   return (
     <Stack.Navigator
       key={routeState}
-      initialRouteName={!user || emailVerificationRequired ? "Login" : needsPasswordSetup(user) ? "PasswordSetup" : "Home"}
+      initialRouteName={!user || emailVerificationRequired ? "Login" : passwordSetupRequired ? "PasswordSetup" : "Home"}
       screenOptions={{ headerShown: false }}
     >
       {!user || emailVerificationRequired ? (

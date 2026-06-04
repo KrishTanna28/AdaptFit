@@ -185,6 +185,14 @@ export const styles = StyleSheet.create({
   userMessageText: {
     color: appTheme.colors.onPrimary,
   },
+  planCardStack: {
+    width: "100%",
+    maxWidth: "85%",
+    gap: appTheme.spacing.md,
+  },
+  planStackCard: {
+    maxWidth: "100%",
+  },
   workoutCard: {
     maxWidth: "85%",
     borderRadius: appTheme.radii.lg,

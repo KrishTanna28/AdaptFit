@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+import { parseLlmJsonWithSchema } from "../../schemas/validators.js";
+import { buildIntentPrompt } from "./intentPrompt.js";
+
 export const IntentSchema = z
   .object({
     primaryIntent: z.enum([
@@ -43,7 +46,61 @@ const SOURCES_BY_INTENT = {
   general: ["signals", "profile", "memory"],
 };
 
-export function classifyIntent(message) {
+const ALLOWED_INTENTS = new Set([
+  "workout",
+  "nutrition",
+  "recovery",
+  "fatigue",
+  "motivation",
+  "adherence",
+  "hydration",
+  "progress",
+  "general",
+]);
+
+const ALLOWED_SOURCES = new Set(["signals", "workouts", "nutrition", "lifestyle", "steps", "profile", "memory"]);
+
+function normalizeIntent(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return ALLOWED_INTENTS.has(normalized) ? normalized : "";
+}
+
+function normalizeUrgency(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return ["low", "medium", "high"].includes(normalized) ? normalized : "low";
+}
+
+function repairIntent(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  const primaryIntent = normalizeIntent(raw.primaryIntent) || "general";
+  const secondaryIntents = Array.isArray(raw.secondaryIntents)
+    ? raw.secondaryIntents
+        .map(normalizeIntent)
+        .filter((intent) => intent && intent !== primaryIntent)
+    : [];
+  const requiredSources = Array.isArray(raw.requiredSources)
+    ? raw.requiredSources
+        .map((source) => String(source ?? "").trim().toLowerCase())
+        .filter((source) => ALLOWED_SOURCES.has(source))
+    : [];
+  const intentSources = [primaryIntent, ...secondaryIntents]
+    .flatMap((intent) => SOURCES_BY_INTENT[intent] ?? []);
+
+  return {
+    primaryIntent,
+    secondaryIntents: [...new Set(secondaryIntents)],
+    confidence: Math.min(1, Math.max(0, Number(raw.confidence) || 0.45)),
+    urgency: normalizeUrgency(raw.urgency),
+    requiredSources: requiredSources.length
+      ? [...new Set([...requiredSources, ...intentSources])]
+      : [...new Set(intentSources.length ? intentSources : SOURCES_BY_INTENT.general)],
+  };
+}
+
+export function classifyIntentWithRegex(message) {
   const text = String(message ?? "");
   const matched = INTENT_PATTERNS.filter((item) => item.pattern.test(text)).map((item) => item.intent);
   const primaryIntent = matched[0] ?? "general";
@@ -62,4 +119,29 @@ export function classifyIntent(message) {
     urgency,
     requiredSources: SOURCES_BY_INTENT[primaryIntent] ?? SOURCES_BY_INTENT.general,
   });
+}
+
+export async function classifyIntent(message, { aiProvider } = {}) {
+  const fallback = classifyIntentWithRegex(message);
+
+  if (!aiProvider?.generateCoachText) {
+    return fallback;
+  }
+
+  try {
+    const prompt = buildIntentPrompt(message);
+    const response = await aiProvider.generateCoachText({
+      ...prompt,
+      history: [],
+    });
+    return parseLlmJsonWithSchema({
+      text: response.text,
+      schema: IntentSchema,
+      repair: repairIntent,
+      fallback,
+      label: "coach-intent",
+    });
+  } catch {
+    return fallback;
+  }
 }

@@ -805,13 +805,10 @@ export default function NutritionScreen() {
       imageBase64: asset.base64,
       mimeType: asset.mimeType ?? "image/jpeg",
       totalWeightLabel: "",
-      isAnalyzing: true,
+      isAnalyzing: false,
     };
 
     setPlateDraft(nextDraft);
-    setTimeout(() => {
-      void handleAnalyzePlate(nextDraft);
-    }, 0);
   };
 
   const handleRetakePlatePhoto = () => {
@@ -1377,7 +1374,7 @@ export default function NutritionScreen() {
         totalWeightLabel={plateDraft.totalWeightLabel}
         isAnalyzing={plateDraft.isAnalyzing}
         onChangeTotalWeight={handlePlateWeightInputChange}
-        onAnalyze={handleAnalyzePlate}
+        onAnalyze={() => handleAnalyzePlate()}
         onRetake={handleRetakePlatePhoto}
         onClose={closePlateCaptureModal}
       />
@@ -1401,4 +1398,3 @@ export default function NutritionScreen() {
     </SafeAreaView>
   );
 }
-
