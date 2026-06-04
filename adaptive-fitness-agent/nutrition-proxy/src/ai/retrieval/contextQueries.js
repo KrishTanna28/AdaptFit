@@ -1,6 +1,7 @@
-import { CoachContextSchema } from "../schemas/firestore.js";
-import { validateOrThrow } from "../schemas/validators.js";
-import { firestoreLatencyMs } from "../observability/metrics.js";
+import { createHash } from "node:crypto";
+
+import { CoachContextSchema } from "../../schemas/firestore.js";
+import { validateOrThrow } from "../../schemas/validators.js";
 
 const DEFAULT_CONTEXT_WINDOW_DAYS = 7;
 const MAX_CONTEXT_WINDOW_DAYS = 30;
@@ -8,6 +9,8 @@ const PROFILE_HISTORY_LIMIT = 30;
 const MIN_ACTIVE_CALORIE_TARGET = 150;
 const MAX_ACTIVE_CALORIE_TARGET = 650;
 const ACTIVE_CALORIE_INTAKE_RATIO = 0.2;
+
+const ALL_CONTEXT_SOURCES = ["profile", "nutrition", "workouts", "lifestyle", "steps"];
 
 function toNumber(value, fallback = 0) {
   const n = typeof value === "number" ? value : Number(value);
@@ -18,7 +21,7 @@ function clampNumber(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function toDateKey(date) {
+export function toDateKey(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -44,16 +47,11 @@ function daysBetweenDateKeys(fromDateKeyValue, toDateKeyValue) {
     return null;
   }
 
-  const msPerDay = 24 * 60 * 60 * 1000;
-  return Math.max(0, Math.round((to.getTime() - from.getTime()) / msPerDay));
+  return Math.max(0, Math.round((to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000)));
 }
 
 function toSerializable(value, depth = 0) {
-  if (depth > 10) {
-    return null;
-  }
-
-  if (value === null || value === undefined) {
+  if (depth > 10 || value === undefined || value === null) {
     return null;
   }
 
@@ -74,9 +72,7 @@ function toSerializable(value, depth = 0) {
     if (typeof value.toDate === "function") {
       try {
         const dateValue = value.toDate();
-        if (dateValue instanceof Date) {
-          return dateValue.toISOString();
-        }
+        return dateValue instanceof Date ? dateValue.toISOString() : null;
       } catch {
         return null;
       }
@@ -92,9 +88,9 @@ function toSerializable(value, depth = 0) {
   return null;
 }
 
-function buildRecentDateKeys(windowDays) {
+export function buildRecentDateKeys(windowDays, now = new Date()) {
   const out = [];
-  const today = new Date();
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0);
 
   for (let offset = 0; offset < windowDays; offset += 1) {
@@ -144,8 +140,6 @@ function normalizeProfileHistoryEntry(doc) {
 }
 
 function normalizeNutritionEntry(raw, dateKey) {
-  const serializableRaw = toSerializable(raw);
-
   return {
     dateKey,
     id: typeof raw.id === "string" ? raw.id : "",
@@ -165,13 +159,11 @@ function normalizeNutritionEntry(raw, dateKey) {
     ironMg: toNumber(raw.ironMg, 0),
     vitaminCMg: toNumber(raw.vitaminCMg, 0),
     loggedAt: typeof raw.loggedAt === "string" ? raw.loggedAt : null,
-    raw: serializableRaw,
+    raw: toSerializable(raw),
   };
 }
 
 function normalizeWorkoutEntry(raw, dateKey) {
-  const serializableRaw = toSerializable(raw);
-
   return {
     dateKey,
     id: typeof raw.id === "string" ? raw.id : "",
@@ -195,7 +187,7 @@ function normalizeWorkoutEntry(raw, dateKey) {
     resolverVersion: typeof raw.resolverVersion === "string" ? raw.resolverVersion : "",
     mappingSource: typeof raw.mappingSource === "string" ? raw.mappingSource : "",
     loggedAt: typeof raw.loggedAt === "string" ? raw.loggedAt : null,
-    raw: serializableRaw,
+    raw: toSerializable(raw),
   };
 }
 
@@ -223,7 +215,6 @@ function toNullableNumber(value) {
 
 function normalizeLifestyleLog(raw, dateKey) {
   const source = raw && typeof raw === "object" ? raw : {};
-  const serializableRaw = toSerializable(source);
   const hydration = source.hydration && typeof source.hydration === "object" ? source.hydration : {};
   const weather = source.weather && typeof source.weather === "object" ? source.weather : {};
   const recovery = source.recovery && typeof source.recovery === "object" ? source.recovery : {};
@@ -252,65 +243,13 @@ function normalizeLifestyleLog(raw, dateKey) {
       notes: typeof recovery.notes === "string" ? recovery.notes : "",
       loggedAt: typeof recovery.loggedAt === "string" ? recovery.loggedAt : null,
     },
-    raw: serializableRaw,
+    raw: toSerializable(source),
   };
 }
 
-async function loadDayDescriptors(db, uid, collectionName, windowDays, includeAllHistory) {
-  const recentDateKeys = buildRecentDateKeys(windowDays);
-
-  if (!includeAllHistory) {
-    return recentDateKeys.map((dateKey) => ({
-      dateKey,
-      dayMeta: null,
-    }));
-  }
-
-  const daySnapshot = await db.collection("users").doc(uid).collection(collectionName).get();
-  const descriptors = daySnapshot.docs
-    .map((dayDoc) => {
-      const dayData = dayDoc.data() ?? {};
-      const dateKeyFromData = typeof dayData.dateKey === "string" ? dayData.dateKey : "";
-      const dateKey = dateKeyFromData || dayDoc.id;
-
-      if (!dateKey) {
-        return null;
-      }
-
-      return {
-        dateKey,
-        dayMeta: toSerializable({ id: dayDoc.id, ...dayData }),
-      };
-    })
-    .filter((item) => item !== null)
-    .sort((left, right) => right.dateKey.localeCompare(left.dateKey));
-
-  if (descriptors.length > 0) {
-    const byDateKey = new Map(descriptors.map((descriptor) => [descriptor.dateKey, descriptor]));
-    recentDateKeys.forEach((dateKey) => {
-      if (!byDateKey.has(dateKey)) {
-        byDateKey.set(dateKey, {
-          dateKey,
-          dayMeta: null,
-        });
-      }
-    });
-
-    return Array.from(byDateKey.values()).sort((left, right) =>
-      right.dateKey.localeCompare(left.dateKey),
-    );
-  }
-
-  return recentDateKeys.map((dateKey) => ({
-    dateKey,
-    dayMeta: null,
-  }));
-}
-
-async function loadEntriesByDate(db, uid, collectionName, dayDescriptors) {
-  const dayResults = await Promise.all(
-    dayDescriptors.map(async (dayDescriptor) => {
-      const dateKey = dayDescriptor.dateKey;
+async function loadEntriesForDateKeys(db, uid, collectionName, dateKeys) {
+  return Promise.all(
+    dateKeys.map(async (dateKey) => {
       const snapshot = await db
         .collection("users")
         .doc(uid)
@@ -321,33 +260,29 @@ async function loadEntriesByDate(db, uid, collectionName, dayDescriptors) {
 
       return {
         dateKey,
-        dayMeta: dayDescriptor.dayMeta,
+        dayMeta: null,
         entries: snapshot.docs.map((entryDoc) => ({ id: entryDoc.id, ...entryDoc.data() })),
       };
     }),
   );
-
-  return dayResults;
 }
 
-async function loadDocumentsByDate(db, uid, collectionName, dayDescriptors) {
-  const dayResults = await Promise.all(
-    dayDescriptors.map(async (dayDescriptor) => {
+async function loadDocumentsForDateKeys(db, uid, collectionName, dateKeys) {
+  return Promise.all(
+    dateKeys.map(async (dateKey) => {
       const snapshot = await db
         .collection("users")
         .doc(uid)
         .collection(collectionName)
-        .doc(dayDescriptor.dateKey)
+        .doc(dateKey)
         .get();
 
       return {
-        dateKey: dayDescriptor.dateKey,
-        data: snapshot.exists ? { id: snapshot.id, ...snapshot.data() } : dayDescriptor.dayMeta,
+        dateKey,
+        data: snapshot.exists ? { id: snapshot.id, ...snapshot.data() } : null,
       };
     }),
   );
-
-  return dayResults;
 }
 
 async function loadProfileHistory(db, uid, limit) {
@@ -432,12 +367,13 @@ function getMostRecentEntry(entries) {
       return dateCompare;
     }
 
-    return String(left.loggedAt ?? "").localeCompare(String(right.loggedAt ?? ""));
+    return String(left.loggedAt ?? left.updatedAt ?? "").localeCompare(
+      String(right.loggedAt ?? right.updatedAt ?? ""),
+    );
   })[entries.length - 1];
 }
 
-function buildRecencySummary(input) {
-  const { currentDateKey, nutritionEntries, workoutEntries } = input;
+function buildRecencySummary({ currentDateKey, nutritionEntries, workoutEntries }) {
   const todaysNutritionEntries = getEntriesForDate(nutritionEntries, currentDateKey);
   const todaysWorkoutEntries = getEntriesForDate(workoutEntries, currentDateKey);
   const lastNutritionEntry = getMostRecentEntry(nutritionEntries);
@@ -473,17 +409,8 @@ function buildRecencySummary(input) {
   };
 }
 
-function buildSignals(input) {
+function buildSignals({ profile, workoutSummary, nutritionSummary, lifestyleSummary, stepGoal, recency, stepsSummary }) {
   const signals = [];
-  const {
-    profile,
-    workoutSummary,
-    nutritionSummary,
-    lifestyleSummary,
-    stepGoal,
-    recency,
-    stepsSummary,
-  } = input;
 
   if (!nutritionSummary.totalMealsLogged) {
     signals.push("No nutrition logs in the selected window.");
@@ -519,14 +446,6 @@ function buildSignals(input) {
     signals.push("Protein intake appears low for body weight and recovery goals.");
   }
 
-  if (
-    nutritionSummary.avgDailyCalories > 0 &&
-    workoutSummary.avgDailyActiveCalories > 0 &&
-    workoutSummary.avgDailyActiveCalories > nutritionSummary.avgDailyCalories
-  ) {
-    signals.push("High estimated energy expenditure relative to logged calories.");
-  }
-
   if (typeof stepGoal === "number" && stepGoal >= 10000) {
     signals.push("User has an ambitious daily step target.");
   }
@@ -558,14 +477,6 @@ function buildSignals(input) {
     ) {
       signals.push("Hydration is behind today's adaptive goal.");
     }
-
-    if (
-      todayLifestyle.weatherCondition === "hot" ||
-      todayLifestyle.weatherCondition === "humid" ||
-      (typeof todayLifestyle.temperatureC === "number" && todayLifestyle.temperatureC >= 30)
-    ) {
-      signals.push("Hot or humid weather is logged today. Hydration and heat management matter.");
-    }
   }
 
   if (lifestyleSummary?.poorRecoveryDays > 0) {
@@ -579,8 +490,79 @@ function buildSignals(input) {
   return signals;
 }
 
-export async function loadCoachContext(db, uid, options = {}) {
-  const loadStart = performance.now();
+function emptyNutritionSummary() {
+  return {
+    totalCalories: 0,
+    totalProtein: 0,
+    totalCarbs: 0,
+    totalFat: 0,
+    totalMealsLogged: 0,
+    avgDailyCalories: 0,
+    avgDailyProtein: 0,
+    avgDailyCarbs: 0,
+    avgDailyFat: 0,
+    daily: [],
+    allEntries: [],
+    entriesByDay: [],
+  };
+}
+
+function emptyWorkoutSummary() {
+  return {
+    sessions: 0,
+    totalDurationMin: 0,
+    totalActiveCalories: 0,
+    avgDailyDurationMin: 0,
+    avgDailyActiveCalories: 0,
+    intensityCounts: { low: 0, moderate: 0, vigorous: 0 },
+    daily: [],
+    allEntries: [],
+    entriesByDay: [],
+  };
+}
+
+function emptyLifestyleSummary() {
+  return {
+    daysLogged: 0,
+    hydrationDays: 0,
+    avgHydrationProgressPercent: null,
+    recoveryDays: 0,
+    avgSleepHours: null,
+    avgStressLevel: null,
+    poorRecoveryDays: 0,
+    daily: [],
+    allEntries: [],
+    entriesByDay: [],
+  };
+}
+
+function emptyStepsSummary() {
+  return {
+    totalSteps: 0,
+    avgDailySteps: 0,
+    daysLogged: 0,
+    stepsToday: 0,
+    stepGoalToday: null,
+    goalMetToday: null,
+    lastStepDateKey: null,
+    daysSinceLastStepLog: null,
+    daily: [],
+  };
+}
+
+export function normalizeContextSources(sources) {
+  const sourceSet = new Set(
+    (Array.isArray(sources) ? sources : ALL_CONTEXT_SOURCES)
+      .map((source) => String(source ?? "").trim())
+      .filter(Boolean),
+  );
+
+  sourceSet.delete("signals");
+  sourceSet.delete("memory");
+  return sourceSet.size ? sourceSet : new Set(ALL_CONTEXT_SOURCES);
+}
+
+export async function loadCoachContextForSources(db, uid, options = {}) {
   const now = new Date();
   const currentDateKey = toDateKey(now);
   const requestedWindow = toNumber(options.windowDays, DEFAULT_CONTEXT_WINDOW_DAYS);
@@ -588,29 +570,33 @@ export async function loadCoachContext(db, uid, options = {}) {
     MAX_CONTEXT_WINDOW_DAYS,
     Math.max(DEFAULT_CONTEXT_WINDOW_DAYS, Math.floor(requestedWindow || DEFAULT_CONTEXT_WINDOW_DAYS)),
   );
-  const includeAllHistory = options.includeAllHistory !== false;
+  const requestedSources = normalizeContextSources(options.sources);
+  const recentDateKeys = buildRecentDateKeys(windowDays, now);
+  const recentDateKeysAsc = [...recentDateKeys].sort();
 
   const userDoc = await db.collection("users").doc(uid).get();
   const userDataRaw = userDoc.exists ? userDoc.data() ?? {} : {};
   const userData = toSerializable(userDataRaw);
   const profile = parseProfile(userData.profile);
   const stepGoal = toNumber(userData.dailyStepGoal, 0) || null;
+  const shouldLoadProfileHistory = requestedSources.has("profile");
 
-  const profileHistoryEntries = await loadProfileHistory(db, uid, PROFILE_HISTORY_LIMIT);
-
-  const [nutritionDayDescriptors, workoutDayDescriptors, lifestyleDayDescriptors, stepDayDescriptors] = await Promise.all([
-    loadDayDescriptors(db, uid, "nutritionLogs", windowDays, includeAllHistory),
-    loadDayDescriptors(db, uid, "workoutLogs", windowDays, includeAllHistory),
-    loadDayDescriptors(db, uid, "lifestyleLogs", windowDays, includeAllHistory),
-    loadDayDescriptors(db, uid, "stepLogs", windowDays, includeAllHistory),
-  ]);
-
-  const [nutritionByDateRaw, workoutByDateRaw, lifestyleByDateRaw, stepByDateRaw] = await Promise.all([
-    loadEntriesByDate(db, uid, "nutritionLogs", nutritionDayDescriptors),
-    loadEntriesByDate(db, uid, "workoutLogs", workoutDayDescriptors),
-    loadDocumentsByDate(db, uid, "lifestyleLogs", lifestyleDayDescriptors),
-    loadDocumentsByDate(db, uid, "stepLogs", stepDayDescriptors),
-  ]);
+  const [profileHistoryEntries, nutritionByDateRaw, workoutByDateRaw, lifestyleByDateRaw, stepByDateRaw] =
+    await Promise.all([
+      shouldLoadProfileHistory ? loadProfileHistory(db, uid, PROFILE_HISTORY_LIMIT) : Promise.resolve([]),
+      requestedSources.has("nutrition")
+        ? loadEntriesForDateKeys(db, uid, "nutritionLogs", recentDateKeys)
+        : Promise.resolve([]),
+      requestedSources.has("workouts")
+        ? loadEntriesForDateKeys(db, uid, "workoutLogs", recentDateKeys)
+        : Promise.resolve([]),
+      requestedSources.has("lifestyle")
+        ? loadDocumentsForDateKeys(db, uid, "lifestyleLogs", recentDateKeys)
+        : Promise.resolve([]),
+      requestedSources.has("steps")
+        ? loadDocumentsForDateKeys(db, uid, "stepLogs", recentDateKeys)
+        : Promise.resolve([]),
+    ]);
 
   const nutritionByDate = nutritionByDateRaw.map((day) => ({
     dateKey: day.dateKey,
@@ -631,7 +617,6 @@ export async function loadCoachContext(db, uid, options = {}) {
   const nutritionEntries = nutritionByDate
     .flatMap((day) => day.entries)
     .sort((a, b) => String(a.loggedAt ?? "").localeCompare(String(b.loggedAt ?? "")));
-
   const workoutEntries = workoutByDate
     .flatMap((day) => day.entries)
     .sort((a, b) => String(a.loggedAt ?? "").localeCompare(String(b.loggedAt ?? "")));
@@ -640,7 +625,6 @@ export async function loadCoachContext(db, uid, options = {}) {
     dateKey: day.dateKey,
     log: normalizeLifestyleLog(day.data, day.dateKey),
   }));
-
   const lifestyleLogs = lifestyleByDate
     .map((day) => day.log)
     .sort((a, b) => String(a.dateKey ?? "").localeCompare(String(b.dateKey ?? "")));
@@ -649,18 +633,7 @@ export async function loadCoachContext(db, uid, options = {}) {
     .map((day) => normalizeStepLog(day.data, day.dateKey))
     .sort((a, b) => String(a.dateKey ?? "").localeCompare(String(b.dateKey ?? "")));
 
-  const nutritionDateKeys = nutritionByDate.map((day) => day.dateKey);
-  const workoutDateKeys = workoutByDate.map((day) => day.dateKey);
-  const lifestyleDateKeys = lifestyleByDate.map((day) => day.dateKey);
-  const mergedDateKeys = Array.from(new Set([...nutritionDateKeys, ...workoutDateKeys, ...lifestyleDateKeys])).sort();
-
-  const averagingDays = Math.max(
-    1,
-    includeAllHistory
-      ? mergedDateKeys.length || windowDays
-      : windowDays,
-  );
-
+  const averagingDays = windowDays;
   const nutritionTotals = {
     totalCalories: Math.round(nutritionEntries.reduce((sum, entry) => sum + entry.calories, 0)),
     totalProtein: Math.round(nutritionEntries.reduce((sum, entry) => sum + entry.protein, 0)),
@@ -668,7 +641,6 @@ export async function loadCoachContext(db, uid, options = {}) {
     totalFat: Math.round(nutritionEntries.reduce((sum, entry) => sum + entry.fat, 0)),
     totalMealsLogged: nutritionEntries.length,
   };
-
   const workoutTotals = {
     sessions: workoutEntries.length,
     totalDurationMin: Math.round(workoutEntries.reduce((sum, entry) => sum + entry.durationMin, 0)),
@@ -677,16 +649,18 @@ export async function loadCoachContext(db, uid, options = {}) {
     ),
   };
 
-  const nutritionSummary = {
-    ...nutritionTotals,
-    avgDailyCalories: Math.round(nutritionTotals.totalCalories / averagingDays),
-    avgDailyProtein: Math.round(nutritionTotals.totalProtein / averagingDays),
-    avgDailyCarbs: Math.round(nutritionTotals.totalCarbs / averagingDays),
-    avgDailyFat: Math.round(nutritionTotals.totalFat / averagingDays),
-    daily: buildDailyNutritionSummary(nutritionDateKeys, nutritionEntries),
-    allEntries: nutritionEntries,
-    entriesByDay: nutritionByDate,
-  };
+  const nutritionSummary = requestedSources.has("nutrition")
+    ? {
+        ...nutritionTotals,
+        avgDailyCalories: Math.round(nutritionTotals.totalCalories / averagingDays),
+        avgDailyProtein: Math.round(nutritionTotals.totalProtein / averagingDays),
+        avgDailyCarbs: Math.round(nutritionTotals.totalCarbs / averagingDays),
+        avgDailyFat: Math.round(nutritionTotals.totalFat / averagingDays),
+        daily: buildDailyNutritionSummary(recentDateKeysAsc, nutritionEntries),
+        allEntries: nutritionEntries,
+        entriesByDay: nutritionByDate,
+      }
+    : emptyNutritionSummary();
 
   const intensityCounts = workoutEntries.reduce(
     (acc, entry) => {
@@ -696,16 +670,17 @@ export async function loadCoachContext(db, uid, options = {}) {
     },
     { low: 0, moderate: 0, vigorous: 0 },
   );
-
-  const workoutSummary = {
-    ...workoutTotals,
-    avgDailyDurationMin: Math.round(workoutTotals.totalDurationMin / averagingDays),
-    avgDailyActiveCalories: Math.round(workoutTotals.totalActiveCalories / averagingDays),
-    intensityCounts,
-    daily: buildDailyWorkoutSummary(workoutDateKeys, workoutEntries),
-    allEntries: workoutEntries,
-    entriesByDay: workoutByDate,
-  };
+  const workoutSummary = requestedSources.has("workouts")
+    ? {
+        ...workoutTotals,
+        avgDailyDurationMin: Math.round(workoutTotals.totalDurationMin / averagingDays),
+        avgDailyActiveCalories: Math.round(workoutTotals.totalActiveCalories / averagingDays),
+        intensityCounts,
+        daily: buildDailyWorkoutSummary(recentDateKeysAsc, workoutEntries),
+        allEntries: workoutEntries,
+        entriesByDay: workoutByDate,
+      }
+    : emptyWorkoutSummary();
 
   const hydrationLogs = lifestyleLogs.filter(
     (entry) => entry.hydration.intakeMl > 0 || entry.hydration.goalMl > 0,
@@ -722,7 +697,6 @@ export async function loadCoachContext(db, uid, options = {}) {
   const hydrationProgressLogs = hydrationLogs.filter(
     (entry) => typeof entry.hydration.progressPercent === "number",
   );
-
   const poorRecoveryDays = recoveryLogs.filter((entry) => {
     const sleepHours = entry.recovery.sleepHours;
     const sleepQuality = entry.recovery.sleepQuality;
@@ -734,67 +708,71 @@ export async function loadCoachContext(db, uid, options = {}) {
     );
   }).length;
 
-  const lifestyleSummary = {
-    daysLogged: lifestyleLogs.filter((entry) =>
-      entry.hydration.intakeMl > 0 ||
-      entry.recovery.sleepHours !== null ||
-      entry.recovery.sleepQuality !== null ||
-      entry.recovery.stressLevel !== null ||
-      entry.weather.temperatureC !== null ||
-      entry.weather.humidityPercent !== null,
-    ).length,
-    hydrationDays: hydrationLogs.length,
-    avgHydrationProgressPercent: hydrationProgressLogs.length
-      ? Math.round(
-          hydrationProgressLogs.reduce(
-            (sum, entry) => sum + toNumber(entry.hydration.progressPercent, 0),
-            0,
-          ) / hydrationProgressLogs.length,
-        )
-      : null,
-    recoveryDays: recoveryLogs.length,
-    avgSleepHours: sleepLogs.length
-      ? Number(
-          (
-            sleepLogs.reduce((sum, entry) => sum + toNumber(entry.recovery.sleepHours, 0), 0) /
-            sleepLogs.length
-          ).toFixed(1),
-        )
-      : null,
-    avgStressLevel: stressLogs.length
-      ? Number(
-          (
-            stressLogs.reduce((sum, entry) => sum + toNumber(entry.recovery.stressLevel, 0), 0) /
-            stressLogs.length
-          ).toFixed(1),
-        )
-      : null,
-    poorRecoveryDays,
-    daily: buildDailyLifestyleSummary(lifestyleDateKeys, lifestyleLogs),
-    allEntries: lifestyleLogs,
-    entriesByDay: lifestyleByDate,
-  };
+  const lifestyleSummary = requestedSources.has("lifestyle")
+    ? {
+        daysLogged: lifestyleLogs.filter((entry) =>
+          entry.hydration.intakeMl > 0 ||
+          entry.recovery.sleepHours !== null ||
+          entry.recovery.sleepQuality !== null ||
+          entry.recovery.stressLevel !== null ||
+          entry.weather.temperatureC !== null ||
+          entry.weather.humidityPercent !== null,
+        ).length,
+        hydrationDays: hydrationLogs.length,
+        avgHydrationProgressPercent: hydrationProgressLogs.length
+          ? Math.round(
+              hydrationProgressLogs.reduce(
+                (sum, entry) => sum + toNumber(entry.hydration.progressPercent, 0),
+                0,
+              ) / hydrationProgressLogs.length,
+            )
+          : null,
+        recoveryDays: recoveryLogs.length,
+        avgSleepHours: sleepLogs.length
+          ? Number(
+              (
+                sleepLogs.reduce((sum, entry) => sum + toNumber(entry.recovery.sleepHours, 0), 0) /
+                sleepLogs.length
+              ).toFixed(1),
+            )
+          : null,
+        avgStressLevel: stressLogs.length
+          ? Number(
+              (
+                stressLogs.reduce((sum, entry) => sum + toNumber(entry.recovery.stressLevel, 0), 0) /
+                stressLogs.length
+              ).toFixed(1),
+            )
+          : null,
+        poorRecoveryDays,
+        daily: buildDailyLifestyleSummary(recentDateKeysAsc, lifestyleLogs),
+        allEntries: lifestyleLogs,
+        entriesByDay: lifestyleByDate,
+      }
+    : emptyLifestyleSummary();
 
   const stepLogTotal = stepLogs.reduce((sum, log) => sum + log.steps, 0);
   const stepsToday = stepLogs.find((log) => log.dateKey === currentDateKey)?.steps ?? 0;
   const stepGoalToday = stepLogs.find((log) => log.dateKey === currentDateKey)?.goal ?? stepGoal ?? null;
   const lastStepEntry = getMostRecentEntry(stepLogs);
-  const stepsSummary = {
-    totalSteps: Math.round(stepLogTotal),
-    avgDailySteps: stepLogs.length ? Math.round(stepLogTotal / stepLogs.length) : 0,
-    daysLogged: stepLogs.length,
-    stepsToday,
-    stepGoalToday,
-    goalMetToday:
-      typeof stepGoalToday === "number" && stepGoalToday > 0
-        ? stepsToday >= stepGoalToday
-        : null,
-    lastStepDateKey: lastStepEntry?.dateKey ?? null,
-    daysSinceLastStepLog: lastStepEntry
-      ? daysBetweenDateKeys(lastStepEntry.dateKey, currentDateKey)
-      : null,
-    daily: stepLogs,
-  };
+  const stepsSummary = requestedSources.has("steps")
+    ? {
+        totalSteps: Math.round(stepLogTotal),
+        avgDailySteps: stepLogs.length ? Math.round(stepLogTotal / stepLogs.length) : 0,
+        daysLogged: stepLogs.length,
+        stepsToday,
+        stepGoalToday,
+        goalMetToday:
+          typeof stepGoalToday === "number" && stepGoalToday > 0
+            ? stepsToday >= stepGoalToday
+            : null,
+        lastStepDateKey: lastStepEntry?.dateKey ?? null,
+        daysSinceLastStepLog: lastStepEntry
+          ? daysBetweenDateKeys(lastStepEntry.dateKey, currentDateKey)
+          : null,
+        daily: stepLogs,
+      }
+    : emptyStepsSummary();
 
   const recencyBase = buildRecencySummary({
     currentDateKey,
@@ -838,10 +816,6 @@ export async function loadCoachContext(db, uid, options = {}) {
 
   const signals = buildSignals({
     profile,
-    profileHistory: {
-      entries: profileHistoryEntries,
-      entryCount: profileHistoryEntries.length,
-    },
     workoutSummary,
     nutritionSummary,
     lifestyleSummary,
@@ -853,7 +827,7 @@ export async function loadCoachContext(db, uid, options = {}) {
   const context = {
     generatedAt: now.toISOString(),
     currentDateKey,
-    recentDateKeys: buildRecentDateKeys(windowDays),
+    recentDateKeys,
     user: {
       uid,
       displayName: typeof userData.displayName === "string" ? userData.displayName : null,
@@ -867,13 +841,13 @@ export async function loadCoachContext(db, uid, options = {}) {
     },
     stepGoal,
     window: {
-      includeAllHistory,
+      includeAllHistory: false,
       requestedDays: windowDays,
       averagingDays,
-      nutritionDays: nutritionDateKeys.length,
-      workoutDays: workoutDateKeys.length,
-      fromDateKey: mergedDateKeys[0] ?? null,
-      toDateKey: mergedDateKeys[mergedDateKeys.length - 1] ?? null,
+      nutritionDays: requestedSources.has("nutrition") ? windowDays : 0,
+      workoutDays: requestedSources.has("workouts") ? windowDays : 0,
+      fromDateKey: recentDateKeysAsc[0] ?? null,
+      toDateKey: recentDateKeysAsc[recentDateKeysAsc.length - 1] ?? null,
     },
     recency,
     nutrition: nutritionSummary,
@@ -883,6 +857,26 @@ export async function loadCoachContext(db, uid, options = {}) {
     signals,
   };
 
-  firestoreLatencyMs.labels("loadCoachContext").observe(performance.now() - loadStart);
   return validateOrThrow(CoachContextSchema, context, "coach Firestore context");
 }
+
+export function buildContextSignature(context) {
+  const signatureInput = {
+    currentDateKey: context.currentDateKey,
+    window: context.window,
+    profile: context.profile,
+    stepGoal: context.stepGoal,
+    recency: context.recency,
+    nutrition: context.nutrition?.daily ?? [],
+    workouts: context.workouts?.daily ?? [],
+    lifestyle: context.lifestyle?.daily ?? [],
+    steps: context.steps?.daily ?? [],
+  };
+
+  return createHash("sha256")
+    .update(JSON.stringify(signatureInput))
+    .digest("hex")
+    .slice(0, 32);
+}
+
+export const DEFAULT_CONTEXT_SOURCES = ALL_CONTEXT_SOURCES;

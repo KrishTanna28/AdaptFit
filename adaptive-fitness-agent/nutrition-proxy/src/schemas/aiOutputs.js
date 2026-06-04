@@ -18,7 +18,6 @@ export const MAX_MEAL_ITEMS = 8;
 export const MAX_PLAN_MEALS = 4;
 
 const nonEmptyLimitedString = (maxLength) => NonEmptyStringSchema.max(maxLength);
-const optionalNonNegativeNumber = NonNegativeNumberSchema.default(0);
 
 export const AiUsageSchema = z
   .object({
@@ -50,16 +49,16 @@ export const CoachMealPlanMealSchema = z
     mealType: CoachMealTypeSchema,
     name: nonEmptyLimitedString(MAX_MEAL_NAME_LENGTH),
     items: z.array(z.string().trim().max(MAX_MEAL_ITEM_LENGTH)).max(MAX_MEAL_ITEMS).default([]),
-    calories: optionalNonNegativeNumber,
-    protein: optionalNonNegativeNumber,
-    carbs: optionalNonNegativeNumber,
-    fat: optionalNonNegativeNumber,
-    fiber: optionalNonNegativeNumber,
-    sodiumMg: optionalNonNegativeNumber,
-    potassiumMg: optionalNonNegativeNumber,
-    calciumMg: optionalNonNegativeNumber,
-    ironMg: optionalNonNegativeNumber,
-    vitaminCMg: optionalNonNegativeNumber,
+    calories: NonNegativeNumberSchema,
+    protein: NonNegativeNumberSchema,
+    carbs: NonNegativeNumberSchema,
+    fat: NonNegativeNumberSchema,
+    fiber: NonNegativeNumberSchema,
+    sodiumMg: NonNegativeNumberSchema,
+    potassiumMg: NonNegativeNumberSchema,
+    calciumMg: NonNegativeNumberSchema,
+    ironMg: NonNegativeNumberSchema,
+    vitaminCMg: NonNegativeNumberSchema,
   })
   .strict();
 
@@ -72,6 +71,7 @@ export const CoachMealPlanSchema = z
 
 export const CoachPlanBundleSchema = z
   .object({
+    type: z.enum(["workout", "meal", "both"]).optional(),
     reply: z.string().trim().max(1000).optional(),
     workoutPlan: CoachWorkoutPlanSchema.nullable().optional(),
     mealPlan: CoachMealPlanSchema.nullable().optional(),
@@ -167,6 +167,19 @@ function toNonNegativeNumber(value) {
   return Math.round(n * 10) / 10;
 }
 
+function toRequiredNonNegativeNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return undefined;
+  }
+
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    return undefined;
+  }
+
+  return Math.round(n * 10) / 10;
+}
+
 function normalizeMealType(value) {
   const normalized = safeString(value, 30).toLowerCase();
   if (normalized === "breakfast") return "breakfast";
@@ -230,16 +243,16 @@ export function repairCoachMealPlan(raw) {
               .filter(Boolean)
               .slice(0, MAX_MEAL_ITEMS)
           : [],
-        calories: toNonNegativeNumber(item.calories),
-        protein: toNonNegativeNumber(item.protein),
-        carbs: toNonNegativeNumber(item.carbs),
-        fat: toNonNegativeNumber(item.fat),
-        fiber: toNonNegativeNumber(item.fiber),
-        sodiumMg: toNonNegativeNumber(item.sodiumMg),
-        potassiumMg: toNonNegativeNumber(item.potassiumMg),
-        calciumMg: toNonNegativeNumber(item.calciumMg),
-        ironMg: toNonNegativeNumber(item.ironMg),
-        vitaminCMg: toNonNegativeNumber(item.vitaminCMg),
+        calories: toRequiredNonNegativeNumber(item.calories),
+        protein: toRequiredNonNegativeNumber(item.protein),
+        carbs: toRequiredNonNegativeNumber(item.carbs),
+        fat: toRequiredNonNegativeNumber(item.fat),
+        fiber: toRequiredNonNegativeNumber(item.fiber),
+        sodiumMg: toRequiredNonNegativeNumber(item.sodiumMg),
+        potassiumMg: toRequiredNonNegativeNumber(item.potassiumMg),
+        calciumMg: toRequiredNonNegativeNumber(item.calciumMg),
+        ironMg: toRequiredNonNegativeNumber(item.ironMg),
+        vitaminCMg: toRequiredNonNegativeNumber(item.vitaminCMg),
       };
     })
     .filter((item) => item !== null)
@@ -257,6 +270,9 @@ export function repairCoachPlanBundle(raw) {
   }
 
   return {
+    type: ["workout", "meal", "both"].includes(safeString(raw.type, 20).toLowerCase())
+      ? safeString(raw.type, 20).toLowerCase()
+      : undefined,
     reply: typeof raw.reply === "string" ? safeString(raw.reply, 1000) : undefined,
     workoutPlan: raw.workoutPlan ? repairCoachWorkoutPlan(raw.workoutPlan) : null,
     mealPlan: raw.mealPlan ? repairCoachMealPlan(raw.mealPlan) : null,

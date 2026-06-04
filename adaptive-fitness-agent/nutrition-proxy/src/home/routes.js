@@ -6,7 +6,7 @@ import {
   getCachedJson as cacheGetJson,
   setCachedJson as cacheSetJson,
 } from "../cache/cacheManager.js";
-import { loadCoachContext } from "../coach/context.js";
+import { loadCoachContextForSources } from "../ai/retrieval/contextQueries.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const HOME_SUMMARY_TTL_SECONDS = toPositiveInt(process.env.REDIS_HOME_TTL_SECONDS, 180);
@@ -414,9 +414,9 @@ async function buildStepGoalStreak(db, uid, dailyGoal, context) {
 }
 
 async function buildHomeSummary(db, uid, dailyGoal) {
-  const context = await loadCoachContext(db, uid, {
+  const context = await loadCoachContextForSources(db, uid, {
     windowDays: 30,
-    includeAllHistory: true,
+    sources: ["profile", "nutrition", "workouts", "lifestyle", "steps"],
   });
   const todayKey = context.currentDateKey;
   const workoutEntries = getWorkoutEntriesForDate(context, todayKey);

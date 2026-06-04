@@ -243,45 +243,6 @@ async function parseApiError(response: Response) {
   return new Error(composed);
 }
 
-export async function sendCoachMessage(input: {
-  message: string;
-  conversationId?: string;
-  contextWindowDays?: number;
-  includeAllHistory?: boolean;
-  attachments?: CoachInputAttachment[];
-}): Promise<CoachChatResponse> {
-  const baseUrl = requireBaseUrl();
-  const idToken = await getAuthToken();
-
-  const response = await fetchCoachApi({
-    baseUrl,
-    path: "/api/coach/chat",
-    method: "POST",
-    idToken,
-    body: {
-      message: safeTrim(input.message),
-      conversationId: safeTrim(input.conversationId) || undefined,
-      contextWindowDays: input.contextWindowDays,
-      includeAllHistory: input.includeAllHistory ?? true,
-      attachments: Array.isArray(input.attachments)
-        ? input.attachments
-            .map((attachment) => ({
-              name: safeTrim(attachment.name),
-              mimeType: safeTrim(attachment.mimeType) || "text/plain",
-              content: safeTrim(attachment.content),
-            }))
-            .filter((attachment) => attachment.name && attachment.content)
-        : [],
-    },
-  });
-
-  if (!response.ok) {
-    throw await parseApiError(response);
-  }
-
-  return (await response.json()) as CoachChatResponse;
-}
-
 export async function streamCoachMessage(input: {
   message: string;
   conversationId?: string;
@@ -334,8 +295,8 @@ export async function streamCoachMessage(input: {
         data = null;
       }
       if (message.event === "token") {
-        const token = safeTrim(data?.token);
-        if (token) input.onToken?.(token);
+        const token = typeof data?.token === "string" ? data.token : "";
+        if (token.trim()) input.onToken?.(token);
         return;
       }
       if (message.event === "metadata") {

@@ -38,7 +38,7 @@ import {
   deleteCoachConversation,
   getCoachConversationMessages,
   getCoachConversations,
-  sendCoachMessage,
+  streamCoachMessage,
   transcribeCoachAudio,
   type CoachChatMessage,
   type CoachConversationSummary,
@@ -410,6 +410,9 @@ export default function AICoachScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<HomeTabParamList>>();
   const chatScrollRef = useRef<ScrollView | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const coachAbortControllerRef = useRef<AbortController | null>(null);
+  const coachRequestIdRef = useRef(0);
+  const stoppedCoachRequestIdsRef = useRef<Set<number>>(new Set());
   const sidebarTranslateX = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
 
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
@@ -433,16 +436,6 @@ export default function AICoachScreen() {
   const [animatedTitle, setAnimatedTitle] = useState("");
   const [animatedSubtitle, setAnimatedSubtitle] = useState("");
 
-  const [sidebarHeight, setSidebarHeight] = useState(0);
-
-  const SKELETON_ITEM_HEIGHT = 56; // row height + spacing
-  const MIN_SKELETONS = 10;
-
-  const skeletonCount = Math.max(
-    MIN_SKELETONS,
-    Math.floor(sidebarHeight / SKELETON_ITEM_HEIGHT) || MIN_SKELETONS
-  );
-
   useEffect(() => {
     return () => {
       const recording = recordingRef.current;
@@ -452,6 +445,7 @@ export default function AICoachScreen() {
         });
       }
       Speech.stop();
+      coachAbortControllerRef.current?.abort();
     };
   }, []);
 
@@ -1058,6 +1052,21 @@ export default function AICoachScreen() {
     }
   };
 
+  const handleStopResponse = () => {
+    if (!isSending) {
+      return;
+    }
+
+    const activeRequestId = coachRequestIdRef.current;
+    if (activeRequestId) {
+      stoppedCoachRequestIdsRef.current.add(activeRequestId);
+    }
+
+    coachAbortControllerRef.current?.abort();
+    setIsSending(false);
+    setPendingAssistantId(null);
+  };
+
   const handleSend = async (inputText?: string) => {
     const messageText = (inputText ?? draftMessage).trim();
     const outboundPrompt = messageText;
@@ -1076,10 +1085,15 @@ export default function AICoachScreen() {
     appendMessage(userMessage);
     setDraftMessage("");
     setIsSending(true);
+    const coachRequestId = coachRequestIdRef.current + 1;
+    coachRequestIdRef.current = coachRequestId;
+    stoppedCoachRequestIdsRef.current.delete(coachRequestId);
     scrollToBottom();
 
+    let assistantMessageId = "";
+
     try {
-      const assistantMessageId = `assistant-${Date.now()}`;
+      assistantMessageId = `assistant-${Date.now()}`;
       appendMessage({
         id: assistantMessageId,
         role: "assistant",
@@ -1088,11 +1102,39 @@ export default function AICoachScreen() {
       });
       setPendingAssistantId(assistantMessageId);
 
-      const response = await sendCoachMessage({
+      let streamedReply = "";
+      let hasShownStreamedReply = false;
+      const abortController = new AbortController();
+      coachAbortControllerRef.current = abortController;
+      const response = await streamCoachMessage({
         message: outboundPrompt,
         conversationId,
-        contextWindowDays: 7,
         includeAllHistory: true,
+        signal: abortController.signal,
+        onToken: (token) => {
+          if (
+            coachRequestIdRef.current !== coachRequestId ||
+            stoppedCoachRequestIdsRef.current.has(coachRequestId)
+          ) {
+            return;
+          }
+
+          streamedReply += token;
+          const cleanedStream = normalizeAssistantReply(streamedReply);
+          if (!cleanedStream) {
+            return;
+          }
+
+          if (!hasShownStreamedReply) {
+            hasShownStreamedReply = true;
+            setPendingAssistantId(null);
+          }
+
+          updateMessage(assistantMessageId, {
+            content: cleanedStream,
+          });
+          scrollToBottom();
+        },
       });
 
       if (!conversationId) {
@@ -1117,6 +1159,13 @@ export default function AICoachScreen() {
       void loadConversations(true);
       scrollToBottom();
     } catch (error) {
+      if (stoppedCoachRequestIdsRef.current.has(coachRequestId)) {
+        setMessages((prev) =>
+          prev.filter((item) => item.id !== assistantMessageId || item.content.trim()),
+        );
+        return;
+      }
+
       const message = getUnknownErrorMessage(
         error,
         "Aether could not respond right now. Please try again.",
@@ -1128,8 +1177,12 @@ export default function AICoachScreen() {
       });
       setMessages((prev) => prev.filter((item) => item.content || item.role !== "assistant"));
     } finally {
-      setIsSending(false);
-      setPendingAssistantId(null);
+      stoppedCoachRequestIdsRef.current.delete(coachRequestId);
+      if (coachRequestIdRef.current === coachRequestId) {
+        coachAbortControllerRef.current = null;
+        setIsSending(false);
+        setPendingAssistantId(null);
+      }
     }
   };
 
@@ -1164,7 +1217,7 @@ export default function AICoachScreen() {
 
           {isLoadingConversations ? (
             <View style={styles.sidebarSkeletonList}>
-              {Array.from({ length: skeletonCount }).map((_, index) => (
+              {[0, 1, 2].map((index) => (
                 <View key={index} style={styles.sidebarSkeletonItem}>
                   <AppSkeleton width="72%" height={16} borderRadius={8} variant="activity" />
                   <AppSkeleton width="92%" height={12} borderRadius={8} variant="activity" />
@@ -1172,91 +1225,91 @@ export default function AICoachScreen() {
               ))}
             </View>
           ) : conversationListError ? (
-          <View style={styles.sidebarState}>
-            <Text style={styles.sidebarStateText}>{conversationListError}</Text>
-            <Pressable
-              style={styles.retryButton}
-              onPress={() => {
-                loadConversations().catch(() => {
-                  // handled in loadConversations
-                });
-              }}
-            >
-              <Text style={styles.retryButtonText}>Retry</Text>
-            </Pressable>
-          </View>
+            <View style={styles.sidebarState}>
+              <Text style={styles.sidebarStateText}>{conversationListError}</Text>
+              <Pressable
+                style={styles.retryButton}
+                onPress={() => {
+                  loadConversations().catch(() => {
+                    // handled in loadConversations
+                  });
+                }}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </Pressable>
+            </View>
           ) : conversations.length ? (
-          <ScrollView
-            style={styles.conversationList}
-            contentContainerStyle={styles.conversationListContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {conversations.map((conversation) => {
-              const isCurrent = conversation.id === conversationId;
-              const isSelecting = selectingConversationId === conversation.id;
-              const isDeleting = deletingConversationId === conversation.id;
+            <ScrollView
+              style={styles.conversationList}
+              contentContainerStyle={styles.conversationListContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {conversations.map((conversation) => {
+                const isCurrent = conversation.id === conversationId;
+                const isSelecting = selectingConversationId === conversation.id;
+                const isDeleting = deletingConversationId === conversation.id;
 
-              return (
-                <View
-                  key={conversation.id}
-                  style={[
-                    styles.conversationItem,
-                    isCurrent ? styles.conversationItemActive : null,
-                  ]}
-                >
-                  <Pressable
-                    style={styles.conversationOpenArea}
-                    onPress={() => {
-                      handleSelectConversation(conversation).catch(() => {
-                        // handled in handleSelectConversation
-                      });
-                    }}
-                    disabled={Boolean(selectingConversationId || deletingConversationId)}
+                return (
+                  <View
+                    key={conversation.id}
+                    style={[
+                      styles.conversationItem,
+                      isCurrent ? styles.conversationItemActive : null,
+                    ]}
                   >
-                    <View style={styles.conversationItemHeader}>
-                      <Text
-                        style={[
-                          styles.conversationTitle,
-                          isCurrent ? styles.conversationTitleActive : null,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {conversation.title || "Aether chat"}
-                      </Text>
-                      {isSelecting ? (
-                        <ActivityIndicator size="small" color={appTheme.colors.primary} />
-                      ) : (
-                        <Text style={styles.conversationDate}>
-                          {formatConversationDate(conversation.lastMessageAt)}
+                    <Pressable
+                      style={styles.conversationOpenArea}
+                      onPress={() => {
+                        handleSelectConversation(conversation).catch(() => {
+                          // handled in handleSelectConversation
+                        });
+                      }}
+                      disabled={Boolean(selectingConversationId || deletingConversationId)}
+                    >
+                      <View style={styles.conversationItemHeader}>
+                        <Text
+                          style={[
+                            styles.conversationTitle,
+                            isCurrent ? styles.conversationTitleActive : null,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {conversation.title || "Aether chat"}
                         </Text>
-                      )}
-                    </View>
-                    <Text style={styles.conversationPreview} numberOfLines={2}>
-                      {conversation.lastMessagePreview || "Open this conversation"}
-                    </Text>
-                  </Pressable>
+                        {isSelecting ? (
+                          <ActivityIndicator size="small" color={appTheme.colors.primary} />
+                        ) : (
+                          <Text style={styles.conversationDate}>
+                            {formatConversationDate(conversation.lastMessageAt)}
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={styles.conversationPreview} numberOfLines={2}>
+                        {conversation.lastMessagePreview || "Open this conversation"}
+                      </Text>
+                    </Pressable>
 
-                  <Pressable
-                    style={styles.conversationDeleteButton}
-                    onPress={() => confirmDeleteConversation(conversation)}
-                    disabled={Boolean(deletingConversationId)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Delete saved chat"
-                  >
-                    {isDeleting ? (
-                      <ActivityIndicator size="small" color={appTheme.colors.danger} />
-                    ) : (
-                      <Trash2 size={16} color={appTheme.colors.textMuted} strokeWidth={2.2} />
-                    )}
-                  </Pressable>
-                </View>
-              );
-            })}
-          </ScrollView>
+                    <Pressable
+                      style={styles.conversationDeleteButton}
+                      onPress={() => confirmDeleteConversation(conversation)}
+                      disabled={Boolean(deletingConversationId)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete saved chat"
+                    >
+                      {isDeleting ? (
+                        <ActivityIndicator size="small" color={appTheme.colors.danger} />
+                      ) : (
+                        <Trash2 size={16} color={appTheme.colors.textMuted} strokeWidth={2.2} />
+                      )}
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </ScrollView>
           ) : (
-          <View style={styles.sidebarState}>
-            <Text style={styles.sidebarStateText}>Your Aether chats will appear here.</Text>
-          </View>
+            <View style={styles.sidebarState}>
+              <Text style={styles.sidebarStateText}>Your Aether chats will appear here.</Text>
+            </View>
           )}
         </Animated.View>
       </View>
@@ -1289,22 +1342,28 @@ export default function AICoachScreen() {
           placeholder="Message Aether"
           placeholderTextColor={appTheme.colors.textMuted}
           multiline
-          editable={!isSending && !isTranscribing}
+          editable={!isTranscribing}
           maxLength={1800}
         />
 
         <Pressable
-          style={[styles.sendButton, !canSend || isSending ? styles.sendButtonDisabled : null]}
+          style={[
+            styles.sendButton,
+            !isSending && !canSend ? styles.sendButtonDisabled : null,
+          ]}
           onPress={() => {
-            if (isSending) return;
+            if (isSending) {
+              handleStopResponse();
+              return;
+            }
             handleSend().catch(() => {
               // handled in handleSend
             });
           }}
-          disabled={!canSend || isSending}
+          disabled={!isSending && !canSend}
         >
           {isSending ? (
-            <ActivityIndicator size="small" color={appTheme.colors.onPrimary} />
+            <Square size={16} color={appTheme.colors.onPrimary} strokeWidth={2.4} />
           ) : (
             <SendHorizontal
               size={18}

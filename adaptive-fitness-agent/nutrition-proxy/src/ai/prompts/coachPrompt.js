@@ -1,5 +1,10 @@
-export function buildCompressedCoachSystemPrompt() {
-  return [
+export function buildCompressedCoachSystemPrompt(requestedPlanKinds = { workout: false, meal: false }) {
+  const isWorkout = requestedPlanKinds.workout;
+  const isMeal = requestedPlanKinds.meal;
+  const isBoth = isWorkout && isMeal;
+  const isPlan = isWorkout || isMeal;
+
+  const basePrompt = [
     "You are Aether, a supportive and practical virtual fitness coach.",
     "Use deterministic signal packets as the source of truth.",
     "Do not reveal internal states, labels, scores, or backend terminology (for example: RECOVERING, OVERTRAINING_RISK, recoveryNeeded, etc.).",
@@ -10,19 +15,50 @@ export function buildCompressedCoachSystemPrompt() {
     "Do not claim medical authority. For injuries, symptoms, or pain, recommend a qualified professional.",
     "Never provide dangerous or extreme advice.",
     "Keep responses concise and easy to scan.",
-    "For non-plan replies, use 3-5 short numbered points (1 sentence each).",
-    "Keep within these max token guidelines: quick replies 150-300; coaching advice 300-500; detailed explanations 600-800; weekly plans 1000-1500; hard cap 2048.",
+  ];
+
+  if (!isPlan) {
+    return [
+      ...basePrompt,
+      "For non-plan replies, use 3-5 short numbered points (1 sentence each).",
+      "Keep within these max token guidelines: quick replies 150-300; coaching advice 300-500; detailed explanations 600-800.",
+      "Do not output JSON. Use plain text, direct guidance, and short numbered action steps.",
+      "Do not use markdown formatting.",
+    ].join("\n");
+  }
+
+  const jsonRules = [
+    "Keep within these max token guidelines: weekly plans 1000-1500; hard cap 2048.",
     "Plan output:",
-    "If the user asks for only a workout plan and safety allows it, return ONLY JSON (no extra text, no code fences):",
-    '{ "title": string, "exercises": [{ "name": string, "sets": number, "reps": number }] }',
-    "If the user asks for only a meal plan, return ONLY JSON (no extra text, no code fences):",
-    '{ "title": string, "meals": [{ "mealType": "breakfast" | "lunch" | "dinner" | "snacks", "name": string, "items": string[], "calories": number, "protein": number, "carbs": number, "fat": number, "fiber": number, "sodiumMg": number, "potassiumMg": number, "calciumMg": number, "ironMg": number, "vitaminCMg": number }] }',
-    "If the user asks for both a workout plan and a meal plan, return ONLY this wrapper JSON (no extra text, no code fences):",
-    '{ "reply": string, "workoutPlan": { "title": string, "exercises": [{ "name": string, "sets": number, "reps": number }] }, "mealPlan": { "title": string, "meals": [{ "mealType": "breakfast" | "lunch" | "dinner" | "snacks", "name": string, "items": string[], "calories": number, "protein": number, "carbs": number, "fat": number, "fiber": number, "sodiumMg": number, "potassiumMg": number, "calciumMg": number, "ironMg": number, "vitaminCMg": number }] } }',
-    "In combined plan JSON, keep reply to one short sentence and do not repeat the full plan details in text.",
-    "For non-plan replies, use plain text, direct guidance, and short numbered action steps.",
-    "Do not use markdown formatting.",
-  ].join("\n");
+  ];
+
+  if (isBoth) {
+    jsonRules.push(
+      "The user requested BOTH a workout plan and a meal plan. Return ONLY ONE JSON object matching this exact schema (no markdown, no extra text):",
+      '{"type": "both", "reply": "Here is your plan.", "workoutPlan": {"title": "Full Body", "exercises": [{"name": "Squats", "sets": 3, "reps": 10}]}, "mealPlan": {"title": "High Protein", "meals": [{"mealType": "lunch", "name": "Chicken Salad", "items": ["150g chicken", "greens"], "calories": 400, "protein": 40, "carbs": 10, "fat": 15, "fiber": 5, "sodiumMg": 300, "potassiumMg": 400, "calciumMg": 50, "ironMg": 2, "vitaminCMg": 10}]}}',
+      "The 'type' field MUST be 'both'.",
+      "Both workoutPlan and mealPlan MUST NOT be null.",
+      "The 'reply' field is required and must be one short sentence."
+    );
+  } else if (isWorkout) {
+    jsonRules.push(
+      "The user requested a workout plan. Return ONLY ONE JSON object matching this exact schema (no markdown, no extra text):",
+      '{"type": "workout", "reply": "Here is your workout plan.", "workoutPlan": {"title": "Full Body", "exercises": [{"name": "Squats", "sets": 3, "reps": 10}]}, "mealPlan": null}',
+      "The 'type' field MUST be 'workout'.",
+      "workoutPlan MUST NOT be null. mealPlan MUST be null.",
+      "The 'reply' field is required and must be one short sentence."
+    );
+  } else if (isMeal) {
+    jsonRules.push(
+      "The user requested a meal plan. Return ONLY ONE JSON object matching this exact schema (no markdown, no extra text):",
+      '{"type": "meal", "reply": "Here is your meal plan.", "workoutPlan": null, "mealPlan": {"title": "High Protein", "meals": [{"mealType": "lunch", "name": "Chicken Salad", "items": ["150g chicken", "greens"], "calories": 400, "protein": 40, "carbs": 10, "fat": 15, "fiber": 5, "sodiumMg": 300, "potassiumMg": 400, "calciumMg": 50, "ironMg": 2, "vitaminCMg": 10}]}}',
+      "The 'type' field MUST be 'meal'.",
+      "mealPlan MUST NOT be null. workoutPlan MUST be null.",
+      "The 'reply' field is required and must be one short sentence."
+    );
+  }
+
+  return [...basePrompt, ...jsonRules, "Do not use markdown formatting."].join("\n");
 }
 
 export function buildCompressedCoachUserPrompt({ promptPacket, message, attachments = [], tokenCount, toolResults = [] }) {

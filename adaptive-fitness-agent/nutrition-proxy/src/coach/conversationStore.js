@@ -114,6 +114,8 @@ export async function appendConversationMessage(db, uid, conversationId, message
     content,
     model: typeof message.model === "string" ? message.model : null,
     usage: message.usage && typeof message.usage === "object" ? message.usage : null,
+    ...(message.workoutPlan && { workoutPlan: message.workoutPlan }),
+    ...(message.mealPlan && { mealPlan: message.mealPlan }),
     createdAt: FieldValue.serverTimestamp(),
   });
 
@@ -153,6 +155,8 @@ export async function listConversationMessages(db, uid, conversationId, limit) {
         role: normalizeRole(data.role),
         content: typeof data.content === "string" ? data.content : "",
         createdAt: toIsoTimestamp(data.createdAt),
+        ...(data.workoutPlan && { workoutPlan: data.workoutPlan }),
+        ...(data.mealPlan && { mealPlan: data.mealPlan }),
       };
     })
     .reverse();

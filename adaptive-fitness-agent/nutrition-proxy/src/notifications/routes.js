@@ -13,48 +13,284 @@ const DEFAULT_GAP_MINUTES_MIN = 180;
 const DEFAULT_GAP_MINUTES_MAX = 240;
 const DEFAULT_MAX_USERS_PER_TICK = 500;
 const DEFAULT_MAX_DUE_PER_TICK = 100;
-const MINUTE_MS = 60 * 1000;
+const MINUTE_MS = 30 * 60 * 1000;
 const LOCAL_MIDNIGHT_WINDOW_MINUTES = 2;
 
 const FALLBACK_COPY = {
-  log_nudge: [
+  log_nudge: (progress) => [
     {
-      title: "Log today's progress",
+      title: "Log today's progress 📝",
       body: "Add a meal or workout so your coach can keep today's plan accurate.",
     },
     {
-      title: "Quick check-in",
+      title: "Quick check-in ⏱️",
       body: "No meals or workouts logged yet. A 30-second update keeps your day on track.",
     },
+   {
+      title: "Fuel the machine! ⛽",
+      body: "Zero meals logged so far today. Did you skip breakfast, or just forget to log?",
+    },
+    {
+      title: "Time to move? 🏃",
+      body: progress.steps > 0 ? `You've got ${Math.round(progress.steps)} steps but no workouts logged. Need a quick session?` : "No movement logged yet. Even a 10-minute stretch counts!",
+    },
+    {
+      title: "Coach is waiting 🤖",
+      body: "Aether needs your data! Log a meal or workout to get your personalized insights.",
+    },
+    {
+      title: "Blank slate today 📋",
+      body: "Your log is empty. Tap here to add your first meal or activity of the day!",
+    },
+    {
+      title: "Where are you? 👀",
+      body: "It's been quiet today. Drop a quick update so we know you're on track.",
+    },
+    {
+      title: "Don't break the chain 🔗",
+      body: "A quick 30-second log is all it takes to keep your streak alive.",
+    },
+    {
+      title: "Steps check! 👟",
+      body: progress.steps > 0 ? `You've walked ${Math.round(progress.steps)} steps today. Keep the momentum by logging a meal!` : "We haven't seen any steps or logs yet. Time for a quick stretch?",
+    },
+    {
+      title: "Feed your data 📊",
+      body: "Your progress charts are looking a little bare today. Time to log!",
+    },
+    {
+      title: "Just one thing ☝️",
+      body: "Log just one meal or one activity. Small habits build big results.",
+    },
+    {
+      title: "Did you forget? 🤔",
+      body: "It happens! Take a moment to back-log anything you missed earlier today.",
+    },
+    {
+      title: "Aether is ready ⚡",
+      body: "I'm ready to adapt your plan, but I need your latest data first.",
+    },
+    {
+      title: "Start small 🌱",
+      body: "Even a glass of water or a 5-minute walk is worth logging.",
+    },
+    {
+      title: "Let's get going! 🚦",
+      body: "Today is a fresh opportunity. What's your first move going to be?",
+    },
+    {
+      title: "Your future self 🔮",
+      body: "Logging today makes tracking tomorrow easier. Don't leave your coach guessing!",
+    },
   ],
-  late_low_progress: [
+  late_low_progress: (progress) => {
+    const remainingSteps = Math.max(0, progress.stepGoal - progress.steps);
+    const actionText = remainingSteps > 0 && progress.stepGoal > 0
+      ? `Only ${Math.round(remainingSteps)} steps left to hit your goal! 👟`
+      : "Log what you've done or take one small action now. ⚡";
+    return [
+      {
+        title: "Still time to move the needle ⏳",
+        body: `You're under 60% for today. ${actionText}`,
+      },
+      {
+        title: "Finish the day strong 🎯",
+        body: "A short walk, a simple meal log, or a quick workout can still count today.",
+      },
+      {
+        title: "Afternoon slump? ☕",
+        body: remainingSteps > 0 ? `You're ${Math.round(remainingSteps)} steps away from your goal. A quick evening walk could close the gap!` : "The day's not over! Log your afternoon snacks or a quick evening workout.",
+      },
+      {
+        title: "Dinner time check-in 🍽️",
+        body: `You've logged ${Math.round(progress.caloriesIntake)} kcal so far. Don't forget to track your evening meals!`,
+      },
+      {
+        title: "Closing time is approaching 🌙",
+        body: "Your daily progress is lower than usual. Take one small action right now—you've got this! 💪",
+      },
+      {
+        title: "Quick wins available! 🏆",
+        body: remainingSteps > 0 ? `Just ${Math.round(remainingSteps)} steps left. Go pace around the house for a bit!` : "Even logging a glass of water or a quick stretch helps build momentum!",
+      },
+      {
+        title: "Evening push! 🌆",
+        body: remainingSteps > 0 ? `Only ${Math.round(remainingSteps)} steps to go. A post-dinner walk would be perfect.` : "The evening is young! Squeeze in a quick session.",
+      },
+      {
+        title: "Clutch time 🏀",
+        body: "You're behind your usual pace, but you can still turn this day around!",
+      },
+      {
+        title: "Don't write today off ❌",
+        body: "Perfection isn't required. Just do a little bit better right now.",
+      },
+      {
+        title: "Energy check 🔋",
+        body: "Feeling tired? Even a low-intensity mobility routine is better than nothing.",
+      },
+      {
+        title: "Micro-workout time ⏰",
+        body: "Got 10 minutes? Do some squats or push-ups while watching TV.",
+      },
+      {
+        title: "Dinner planning 🥗",
+        body: progress.caloriesIntake > 0 ? `Make your evening meal count! You've logged ${Math.round(progress.caloriesIntake)} kcal so far.` : "Time to plan a healthy dinner to boost your stats.",
+      },
+      {
+        title: "Close the gap 📏",
+        body: "You're hovering under 60% today. Let's try to hit at least 80% before bed.",
+      },
+      {
+        title: "Step it up! 🧗‍♀️",
+        body: remainingSteps > 0 ? `You have ${Math.round(remainingSteps)} steps left. Go grab some water and pace.` : "Steps are good, but let's get a workout in!",
+      },
+      {
+        title: "Night owl 🦉",
+        body: "Are you a late worker? Let's get that activity in before the day wraps up.",
+      },
+      {
+        title: "Every day counts 🗓️",
+        body: "Consistency is built on days like today when you don't feel like it. Push through!",
+      },
+    ];
+  },
+  praise: (progress) => [
     {
-      title: "Still time to move the needle",
-      body: "You're under 60% for today. Log what you've done or take one small action now.",
+      title: "Nice work today 🎉",
+      body: "You're on track. We'll keep the reminders lighter for the rest of the day. 🌙",
     },
     {
-      title: "Finish the day strong",
-      body: "A short walk, a simple meal log, or a quick workout can still count today.",
+      title: "Goal momentum 🔥",
+      body: progress.steps >= progress.stepGoal && progress.stepGoal > 0
+        ? `Goal crushed! You hit ${Math.round(progress.steps)} steps today. Keep doing what is already working. 💪`
+        : "Today's progress is looking good. Keep doing what is already working. ✨",
+    },
+    {
+      title: "Crushing it! 🚀",
+      body: progress.workoutCaloriesBurned > 0 ? `Amazing effort burning ${Math.round(progress.workoutCaloriesBurned)} kcal in your workout today!` : "You are absolutely nailing your daily targets today.",
+    },
+    {
+      title: "Step master 👟",
+      body: progress.steps >= progress.stepGoal && progress.stepGoal > 0 ? `Goal achieved: ${Math.round(progress.steps)} steps! Enjoy the rest of your day.` : `You've hit ${Math.round(progress.steps)} steps and are well on your way!`,
+    },
+    {
+      title: "Consistency is key 🔑",
+      body: `You've logged ${progress.mealsLogged} meals and ${progress.workoutsLogged} workouts. Your future self thanks you! 🙌`,
+    },
+    {
+      title: "Green rings everywhere 🟢",
+      body: "Your progress ratio is looking fantastic today. Keep riding this wave! 🌊",
+    },
+    {
+      title: "Unstoppable! 🚂",
+      body: "Your progress ratio is sky-high today. Way to put in the work.",
+    },
+    {
+      title: "Ahead of schedule ⏱️",
+      body: "You're crushing your targets faster than expected today!",
+    },
+    {
+      title: "Elite consistency 👑",
+      body: `Logging ${progress.mealsLogged} meals and ${progress.workoutsLogged} workouts is how champions are made.`,
+    },
+    {
+      title: "Victory lap 🏁",
+      body: progress.steps >= progress.stepGoal && progress.stepGoal > 0 ? `You crossed the ${Math.round(progress.stepGoal)} step finish line. Great job!` : "Take a moment to appreciate your effort today.",
+    },
+    {
+      title: "Calorie burner 🔥",
+      body: progress.workoutCaloriesBurned > 0 ? `Burning ${Math.round(progress.workoutCaloriesBurned)} kcal takes serious effort. Rest up!` : "You're in the zone today.",
+    },
+    {
+      title: "Nutrition nailed 🥑",
+      body: progress.caloriesIntake > 0 ? `You've tracked ${Math.round(progress.caloriesIntake)} kcal and stayed consistent.` : "Your food tracking is on point today.",
+    },
+    {
+      title: "Rest well deserved 🛋️",
+      body: "You've done the heavy lifting today. Focus on recovery and hydration now.",
+    },
+    {
+      title: "Exceeding expectations 📈",
+      body: "AdaptFit is impressed. You're setting a high bar today.",
+    },
+    {
+      title: "Level up 🍄",
+      body: "Every day like today gets you one step closer to your ultimate goal.",
+    },
+    {
+      title: "Perfect day 💯",
+      body: "Everything is green. No more reminders needed from us today. Enjoy!",
     },
   ],
-  praise: [
+  check_in: (progress) => [
     {
-      title: "Nice work today",
-      body: "You're on track. We'll keep the reminders lighter for the rest of the day.",
+      title: "Small progress counts 📈",
+      body: progress.steps > 0
+        ? `You've taken ${Math.round(progress.steps)} steps today 🚶. Log your latest meal or workout to keep AdaptFit updated.`
+        : "Log your latest meal, workout, or steps so AdaptFit can update your day.",
     },
     {
-      title: "Goal momentum",
-      body: "Today's progress is looking good. Keep doing what is already working.",
-    },
-  ],
-  check_in: [
-    {
-      title: "Small progress counts",
-      body: "Log your latest meal, workout, or steps so AdaptFit can update your day.",
+      title: "Keep the thread going 🧵",
+      body: progress.caloriesIntake > 0
+        ? `You've tracked ${Math.round(progress.caloriesIntake)} kcal so far 🍎. A quick update helps your coach see where today is headed.`
+        : "A quick update now helps your coach understand where today is headed.",
     },
     {
-      title: "Keep the thread going",
-      body: "A quick update now helps your coach understand where today is headed.",
+      title: "Mid-day sync 🔄",
+      body: `You've tracked ${progress.mealsLogged} meals today. Need any recipe ideas for the next one? 🥗`,
+    },
+    {
+      title: "Step check 🚶‍♂️",
+      body: progress.stepGoal > 0 ? `You're at ${Math.round(progress.steps)} / ${Math.round(progress.stepGoal)} steps. ${progress.steps < progress.stepGoal ? "Keep stepping!" : "Goal met!"}` : "How are those steps coming along today?",
+    },
+    {
+      title: "Workout pulse 💓",
+      body: progress.workoutsLogged > 0 ? `Great job logging your workout today! Make sure to stay hydrated. 💧` : "Thinking about working out today? Aether can build a quick plan for you! 🏋️‍♀️",
+    },
+    {
+      title: "Macro check-in 📊",
+      body: progress.caloriesIntake > 0 ? `You're at ${Math.round(progress.caloriesIntake)} kcal today. Don't forget to track those sneaky snacks! 🥨` : "Time to log your latest meal or snack.",
+    },
+    {
+      title: "Water break 💧",
+      body: "Have you hydrated recently? Log a quick glass of water or your next meal.",
+    },
+    {
+      title: "Mid-day momentum 🏄",
+      body: `You have ${progress.workoutsLogged} workouts and ${progress.mealsLogged} meals logged. Keep it up!`,
+    },
+    {
+      title: "How are you feeling? 🧘",
+      body: "Take a second to assess your energy. Don't forget to track your next move.",
+    },
+    {
+      title: "Steps update 📉",
+      body: progress.stepGoal > 0 ? `You are ${Math.round((progress.steps / progress.stepGoal) * 100)}% of the way to your step goal.` : "Keep those feet moving today!",
+    },
+    {
+      title: "Quick math 🧮",
+      body: progress.caloriesIntake > 0 ? `At ${Math.round(progress.caloriesIntake)} kcal, are you on track for your daily target?` : "Time to log some data for the math to work!",
+    },
+    {
+      title: "Stay mindful 🧠",
+      body: "Mindful eating starts with tracking. What's on the menu next?",
+    },
+    {
+      title: "Afternoon check ☀️",
+      body: "Half the day is gone. Let's make the second half count just as much!",
+    },
+    {
+      title: "Activity scan 📡",
+      body: progress.workoutCaloriesBurned > 0 ? `You burned ${Math.round(progress.workoutCaloriesBurned)} active kcal so far. Great work.` : "Planning to sweat today? Let Aether know.",
+    },
+    {
+      title: "Log your snacks 🥨",
+      body: "Those little bites add up! Make sure you are tracking everything accurately.",
+    },
+    {
+      title: "Data is power 🔋",
+      body: "The more you track, the smarter Aether gets. Drop a quick update in the app.",
     },
   ],
 };
@@ -431,8 +667,9 @@ async function loadDailyProgress(db, uid, dateKey, timeZone, now) {
   };
 }
 
-function pickCopy(kind, seed) {
-  const choices = FALLBACK_COPY[kind] ?? FALLBACK_COPY.check_in;
+function pickCopy(kind, seed, progress) {
+  const copyGroup = FALLBACK_COPY[kind] ?? FALLBACK_COPY.check_in;
+  const choices = typeof copyGroup === "function" ? copyGroup(progress) : copyGroup;
   const random = seededRandom(seed);
   return choices[Math.floor(random() * choices.length)] ?? choices[0];
 }
@@ -447,7 +684,7 @@ function selectMessage(progress, slotId) {
     kind = "late_low_progress";
   }
 
-  const copy = pickCopy(kind, `${progress.uid}:${progress.dateKey}:${slotId}:${kind}`);
+  const copy = pickCopy(kind, `${progress.uid}:${progress.dateKey}:${slotId}:${kind}`, progress);
   return {
     kind,
     title: copy.title,

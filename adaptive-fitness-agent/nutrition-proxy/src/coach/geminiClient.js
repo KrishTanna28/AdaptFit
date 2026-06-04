@@ -271,6 +271,14 @@ async function requestGenAIContent({
 // ─────────────────────────────────────────────────────────────
 
 export async function generateCoachResponse(input) {
+  const generationConfig = {
+    temperature: 0.35,
+    topP: 0.9,
+    ...(input.generationConfig && typeof input.generationConfig === "object"
+      ? input.generationConfig
+      : {}),
+  };
+
   const { model, response } =
     await requestGenAIContent({
       systemInstruction: {
@@ -287,10 +295,7 @@ export async function generateCoachResponse(input) {
         },
       ],
 
-      generationConfig: {
-        temperature: 0.35,
-        topP: 0.9,
-      },
+      generationConfig,
     });
 
   return {
@@ -502,6 +507,9 @@ export function streamCoachResponse(input) {
     config: {
       temperature: 0.35,
       topP: 0.9,
+      ...(input.generationConfig && typeof input.generationConfig === "object"
+        ? input.generationConfig
+        : {}),
     },
   };
 
@@ -524,11 +532,11 @@ export function streamCoachResponse(input) {
         );
 
       for await (const chunk of sdkStream) {
-        const chunkText = (chunk.text ?? "").trim();
+        const chunkText = String(chunk.text ?? "");
 
         lastResponse = chunk;
 
-        if (chunkText) {
+        if (chunkText.trim()) {
           fullText += chunkText;
 
           if (onChunk) {

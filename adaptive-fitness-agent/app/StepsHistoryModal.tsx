@@ -81,7 +81,12 @@ export function StepBarChart({
         : 0,
     ),
   );
-  const maxValue = hasSteps ? maxStepValue : maxTargetValue;
+  const maxValue = Math.max(
+  maxStepValue,
+  maxTargetValue,
+  goalLineValue ?? 0,
+  1
+);
   const clampedGoalLineValue =
     typeof goalLineValue === "number"
       ? Math.min(goalLineValue, maxValue)

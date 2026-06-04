@@ -10,7 +10,6 @@ import {
   deleteConversation,
 } from "./conversationStore.js";
 import { runCoachCriticRefiner } from "./critic.js";
-import { loadCoachContext } from "./context.js";
 import { getCoachFirestore, verifyCoachIdToken } from "./firebaseAdmin.js";
 import {
   generateHomeInsightsResponse,
@@ -25,6 +24,7 @@ import {
 import { compressPromptContext } from "../ai/compression/semanticCompressor.js";
 import { buildCompressedCoachSystemPrompt, buildCompressedCoachUserPrompt } from "../ai/prompts/coachPrompt.js";
 import { createAiProvider } from "../ai/providers/index.js";
+import { loadCoachContextForSources } from "../ai/retrieval/contextQueries.js";
 import { retrieveSelectiveContext } from "../ai/retrieval/selectiveContext.js";
 import { classifyIntent } from "../ai/routing/intentClassifier.js";
 import { publishIntelligenceEvent } from "../events/eventBus.js";
@@ -159,9 +159,6 @@ function parsePlanBundle(text) {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return null;
     }
-    if (!("workoutPlan" in parsed) && !("mealPlan" in parsed)) {
-      return null;
-    }
   } catch {
     return null;
   }
@@ -173,6 +170,40 @@ function parsePlanBundle(text) {
     fallback: null,
     label: "coach-plan-bundle",
   });
+}
+
+function parseCoachPlans(text) {
+  const planBundle = parsePlanBundle(text);
+  let workoutPlan = null;
+  let mealPlan = null;
+  let replyFallback = null;
+
+  if (planBundle) {
+    workoutPlan = planBundle.workoutPlan ?? null;
+    mealPlan = planBundle.mealPlan ?? null;
+  } else {
+    workoutPlan = parseWorkoutPlan(text);
+    mealPlan = parseMealPlan(text);
+
+    try {
+      const cleaned = extractJsonText(text);
+      if (cleaned) {
+        const parsed = JSON.parse(cleaned);
+        if (parsed && typeof parsed.reply === "string") {
+          replyFallback = parsed.reply;
+        }
+      }
+    } catch {
+      // Ignore parser errors for fallback
+    }
+  }
+
+  return {
+    planBundle,
+    workoutPlan,
+    mealPlan,
+    replyFallback,
+  };
 }
 
 function parseHomeInsights(text) {
@@ -232,6 +263,7 @@ function buildHomeInsightSignature(context) {
       stepGoalToday: context.steps?.stepGoalToday,
       daily: context.steps?.daily,
     },
+    signalPacket: context.signalPacket,
     signals: context.signals,
     window: context.window,
     previousCoachChats: context.previousCoachChats,
@@ -241,6 +273,148 @@ function buildHomeInsightSignature(context) {
     .update(JSON.stringify(signatureInput))
     .digest("hex")
     .slice(0, 32);
+}
+
+function buildHomeInsightContextFromSignal(signalPacket, previousCoachChats) {
+  return {
+    generatedAt: signalPacket.generatedAt,
+    currentDateKey: signalPacket.currentDateKey,
+    profile: signalPacket.profile,
+    stepGoal: signalPacket.targets?.stepGoal ?? null,
+    window: signalPacket.window,
+    recency: signalPacket.recency,
+    nutrition: {
+      avgDailyCalories: signalPacket.trends?.nutritionCalories?.currentAvg ?? 0,
+      totalMealsLogged: signalPacket.dataCoverage?.nutritionDays ?? 0,
+      caloriesToday: signalPacket.recency?.nutritionCaloriesToday ?? 0,
+    },
+    workouts: {
+      activeDays: signalPacket.dataCoverage?.workoutDays ?? 0,
+      avgDailyActiveCalories: signalPacket.trends?.activeCalories?.currentAvg ?? 0,
+      activeCaloriesToday: signalPacket.recency?.workoutActiveCaloriesToday ?? 0,
+    },
+    lifestyle: {
+      daysLogged: signalPacket.dataCoverage?.lifestyleDays ?? 0,
+      avgSleepHours: signalPacket.trends?.sleepHours?.currentAvg ?? null,
+      avgHydrationProgressPercent: signalPacket.dataCoverage?.avgHydrationProgress ?? null,
+    },
+    steps: {
+      stepsToday: signalPacket.recency?.stepsToday ?? 0,
+      stepGoalToday: signalPacket.recency?.stepGoalToday ?? null,
+      avgDailySteps: signalPacket.trends?.steps?.currentAvg ?? 0,
+    },
+    signals: signalPacket.signals ?? [],
+    signalPacket,
+    previousCoachChats,
+  };
+}
+
+function buildEmptyContextWindow(windowDays, includeAllHistory = false) {
+  const requestedDays = Number.isFinite(Number(windowDays)) ? Number(windowDays) : 7;
+  return {
+    includeAllHistory: Boolean(includeAllHistory),
+    requestedDays,
+    averagingDays: requestedDays,
+    nutritionDays: requestedDays,
+    workoutDays: requestedDays,
+    fromDateKey: null,
+    toDateKey: null,
+  };
+}
+
+function isLightweightSinglePassCandidate(message, attachments = []) {
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    return false;
+  }
+
+  const text = String(message ?? "").trim();
+  if (!text || text.length > 90) {
+    return false;
+  }
+
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length > 12) {
+    return false;
+  }
+
+  const requiresAppData =
+    /\b(plan|routine|program|schedule|split|prep|regimen|log|logged|today|yesterday|week|month|progress|calorie|protein|macro|steps?|sleep|hydration|water|weight|workout|exercise|meal|diet|nutrition|food|breakfast|lunch|dinner|snacks?|recovery|sore|pain|injur|dizzy|chest|faint|emergency)\b/i.test(text);
+  if (requiresAppData) {
+    return false;
+  }
+
+  return /^(hi|hello|hey|yo|sup|good morning|good afternoon|good evening|howdy|thanks|thank you|bye|goodbye|cya|see ya|how are you|what's up|whats up)([\s,!.?]*)$/i.test(text);
+}
+
+function buildLightweightCoachSystemPrompt() {
+  return [
+    "You are Aether, a supportive virtual fitness coach.",
+    "Answer this lightweight chat message directly without using user logs, app data, internal signals, or tool calls.",
+    "Do not claim to have checked the user's data.",
+    "Keep it to one short, natural sentence.",
+    "Do not use markdown formatting.",
+  ].join("\n");
+}
+
+function detectRequestedPlanKinds(message, intent) {
+  const text = String(message ?? "").toLowerCase();
+  const primaryIntent = String(intent?.primaryIntent ?? "").toLowerCase();
+  const secondaryIntents = Array.isArray(intent?.secondaryIntents)
+    ? intent.secondaryIntents.map((item) => String(item ?? "").toLowerCase())
+    : [];
+  const intents = new Set([primaryIntent, ...secondaryIntents]);
+  const planTerm = /\b(plan|routine|program|schedule|split|prep|regimen)\b/i.test(text);
+  const actionTerm = /\b(make|create|build|give|generate|suggest|recommend)\b/i.test(text);
+  const workoutLike =
+    /\b(workout|exercise|training|train|gym|lift|strength|cardio|run|routine|split|sets?|reps?)\b/i.test(text) ||
+    intents.has("workout");
+  const mealLike =
+    /\b(meal|diet|nutrition|food|eat|breakfast|lunch|dinner|snacks?|protein|calorie|macro)\b/i.test(text) ||
+    /\ba\s*meal\b/i.test(text) ||
+    intents.has("nutrition");
+  const combinedPlan =
+    planTerm &&
+    workoutLike &&
+    mealLike &&
+    (
+      /\b(workout|exercise|training|gym|strength|cardio|run)\b.{0,50}\b(meal|diet|nutrition|food|macro)\b/i.test(text) ||
+      /\b(meal|diet|nutrition|food|macro)\b.{0,50}\b(workout|exercise|training|gym|strength|cardio|run)\b/i.test(text) ||
+      /\bboth\b/i.test(text)
+    );
+  const explicitWorkoutPlan =
+    /\b(workout|exercise|training|gym|strength|cardio|run)\s+(plan|routine|program|schedule|split|regimen)\b/i.test(text) ||
+    /\b(plan|routine|program|schedule|split|regimen)\s+(a|an|my|for)?\s*(workout|exercise|training|gym|strength|cardio|run)\b/i.test(text) ||
+    /\bplan\s+(me\s+)?(a|an|my)?\s*(workout|exercise|training|gym|strength|cardio|run)\b/i.test(text) ||
+    combinedPlan ||
+    (actionTerm && workoutLike && planTerm);
+  const explicitMealPlan =
+    /\b(meal|diet|nutrition|food|macro)\s+(plan|prep|program|schedule|regimen)\b/i.test(text) ||
+    /\b(plan|prep|program|schedule|regimen)\s+(a|an|my|for)?\s*(meal|diet|nutrition|food|macro)\b/i.test(text) ||
+    /\bplan\s+(me\s+)?(a|an|my)?\s*(meal|diet|nutrition|food|macro)\b/i.test(text) ||
+    /\bplan\s+(me\s+)?(a|an|my)?\s*a\s*meal\b/i.test(text) ||
+    /\b(what should i eat|what to eat|meals? for|foods? for)\b/i.test(text) ||
+    combinedPlan ||
+    (actionTerm && mealLike && planTerm);
+
+  return {
+    workout: Boolean(explicitWorkoutPlan),
+    meal: Boolean(explicitMealPlan),
+  };
+}
+
+function isPlanRequest(requestedPlanKinds) {
+  return Boolean(requestedPlanKinds.workout || requestedPlanKinds.meal);
+}
+
+function buildCoachGenerationConfig(requestedPlanKinds) {
+  if (!isPlanRequest(requestedPlanKinds)) {
+    return undefined;
+  }
+
+  return {
+    temperature: 0.2,
+    topP: 0.85,
+  };
 }
 
 function buildWorkoutReply(workoutPlan) {
@@ -289,34 +463,33 @@ function applySafetyFallback({ replyText, workoutPlan, mealPlan, signalPacket })
   };
 }
 
-async function finalizeCoachResponse({ coachResponse, orchestration, message }) {
-  const planBundle = parsePlanBundle(coachResponse.text);
-  let workoutPlan = null;
-  let mealPlan = null;
-
-  if (planBundle) {
-    workoutPlan = planBundle.workoutPlan ?? null;
-    mealPlan = planBundle.mealPlan ?? null;
-  } else {
-    workoutPlan = parseWorkoutPlan(coachResponse.text);
-    mealPlan = parseMealPlan(coachResponse.text);
+function signalCoversSources(signalPacket, sources) {
+  const requiredSources = (Array.isArray(sources) ? sources : [])
+    .map((source) => String(source ?? "").trim())
+    .filter((source) => source && source !== "signals" && source !== "memory");
+  if (!requiredSources.length) {
+    return true;
   }
+
+  const coveredSources = signalPacket?.dataCoverage?.sources;
+  if (!Array.isArray(coveredSources)) {
+    return true;
+  }
+
+  const covered = new Set(coveredSources);
+  return requiredSources.every((source) => source === "profile" || covered.has(source));
+}
+
+async function finalizeCoachResponse({ coachResponse, orchestration, message }) {
+  let { planBundle, workoutPlan, mealPlan, replyFallback } = parseCoachPlans(coachResponse.text);
+
   let replyText = workoutPlan || mealPlan
     ? buildCombinedPlanReply({
         workoutPlan,
         mealPlan,
         modelReply: planBundle?.reply,
       })
-    : coachResponse.text;
-  const workoutGoalAchievedToday = Boolean(orchestration.context?.recency?.workoutGoalAchievedToday);
-
-  if (workoutPlan && workoutGoalAchievedToday) {
-    workoutPlan = null;
-    replyText = mealPlan
-      ? buildMealReply(mealPlan)
-      : "You already hit today's workout goal. Prioritize recovery or mobility today, and we can plan the next session when you're ready.";
-  }
-
+    : (replyFallback ?? coachResponse.text);
   const safetyApplied = applySafetyFallback({
     replyText,
     workoutPlan,
@@ -347,9 +520,9 @@ async function finalizeCoachResponse({ coachResponse, orchestration, message }) 
   };
 }
 
-async function loadSignalForChat({ db, uid, windowDays, includeAllHistory, reason }) {
+async function loadSignalForChat({ db, uid, windowDays, reason, sources }) {
   const cachedState = await loadSignalState(db, uid, { windowDays });
-  if (cachedState) {
+  if (cachedState && signalCoversSources(cachedState.signalPacket, sources)) {
     return {
       signalPacket: cachedState.signalPacket,
       signature: cachedState.signature,
@@ -361,8 +534,8 @@ async function loadSignalForChat({ db, uid, windowDays, includeAllHistory, reaso
 
   const recomputeResult = await recomputeUserSignalState(db, uid, {
     windowDays,
-    includeAllHistory,
     reason,
+    sources,
   });
 
   return {
@@ -374,13 +547,13 @@ async function loadSignalForChat({ db, uid, windowDays, includeAllHistory, reaso
   };
 }
 
-async function buildCoachOrchestration({ db, uid, message, conversationId, windowDays, includeAllHistory, attachments, intent }) {
+async function buildCoachOrchestration({ db, uid, message, conversationId, windowDays, includeAllHistory, attachments, intent, requestedPlanKinds }) {
   let signalState = await loadSignalForChat({
     db,
     uid,
     windowDays,
-    includeAllHistory,
     reason: "chat-cache-miss",
+    sources: intent.requiredSources,
   });
 
   const toolResults = await executeCoachToolActions({
@@ -394,8 +567,8 @@ async function buildCoachOrchestration({ db, uid, message, conversationId, windo
   if (hasSuccessfulToolResult(toolResults)) {
     const refreshed = await recomputeUserSignalState(db, uid, {
       windowDays,
-      includeAllHistory,
       reason: "coach-tool-call",
+      sources: intent.requiredSources,
     });
     signalState = {
       signalPacket: refreshed.signalPacket,
@@ -406,7 +579,10 @@ async function buildCoachOrchestration({ db, uid, message, conversationId, windo
     };
   }
 
-  const context = signalState.context ?? await loadCoachContext(db, uid, { windowDays, includeAllHistory });
+  const context = signalState.context ?? await loadCoachContextForSources(db, uid, {
+    windowDays,
+    sources: intent.requiredSources,
+  });
   const previousCoachChats = intent.requiredSources.includes("memory")
     ? await listRecentConversationContext(db, uid, conversationId)
     : [];
@@ -441,7 +617,7 @@ async function buildCoachOrchestration({ db, uid, message, conversationId, windo
     signalSignature: signalState.signature,
     signalCacheSource: signalState.cacheSource,
     signalRecomputed: signalState.recomputed,
-    systemPrompt: buildCompressedCoachSystemPrompt(),
+    systemPrompt: buildCompressedCoachSystemPrompt(requestedPlanKinds),
     userPrompt: buildCompressedCoachUserPrompt({
       promptPacket: compressed.packet,
       message,
@@ -487,96 +663,6 @@ async function requireCoachUser(req, res, next) {
 export function mountCoachRoutes(app) {
   const router = express.Router();
 
-  router.post("/chat", requireCoachUser, async (req, res) => {
-    try {
-      const requestValidation = safeValidate(CoachChatRequestSchema, req.body ?? {}, "coach chat request");
-      if (!requestValidation.ok) {
-        return res.status(400).json(validationErrorResponse(requestValidation));
-      }
-
-      const chatRequest = requestValidation.data;
-      const db = getCoachFirestore();
-      const uid = req.coachUser.uid;
-      logger.info(
-        {
-          uid,
-          messageLength: String(chatRequest.message ?? "").length,
-        },
-        "Coach chat request received.",
-      );
-      const windowDays = chatRequest.contextWindowDays;
-      const includeAllHistory = chatRequest.includeAllHistory;
-      const attachments = chatRequest.attachments;
-      const message = chatRequest.message;
-      const intent = await classifyIntent(message, { aiProvider });
-      const conversationId = await ensureConversation(db, uid, chatRequest.conversationId);
-
-      const orchestration = await buildCoachOrchestration({
-        db,
-        uid,
-        message,
-        conversationId,
-        windowDays,
-        includeAllHistory,
-        attachments,
-        intent,
-      });
-
-      const coachResponse = await aiProvider.generateCoachText({
-        systemPrompt: orchestration.systemPrompt,
-        userPrompt: orchestration.userPrompt,
-        history: orchestration.history,
-      });
-
-      const finalReply = await finalizeCoachResponse({
-        coachResponse,
-        orchestration,
-        message,
-      });
-
-      await appendConversationMessage(db, uid, conversationId, {
-        role: "user",
-        content: message,
-      });
-
-      await appendConversationMessage(db, uid, conversationId, {
-        role: "assistant",
-        content: finalReply.replyText,
-        model: coachResponse.model,
-        usage: coachResponse.usage,
-      });
-
-      return sendValidatedJson(res, CoachChatResponseSchema, {
-        conversationId,
-        reply: finalReply.replyText,
-        model: coachResponse.model,
-        usage: coachResponse.usage,
-        contextSignals: orchestration.signalPacket.signals,
-        contextWindow: orchestration.context.window,
-        attachmentsUsed: attachments.length,
-        workoutPlan: finalReply.workoutPlan ?? undefined,
-        mealPlan: finalReply.mealPlan ?? undefined,
-        toolResults: orchestration.toolResults.length ? orchestration.toolResults : undefined,
-      }, "coach chat response");
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unknown error";
-      const statusCode = inferCoachErrorStatus(detail, 500);
-
-      logger.error(
-        {
-          err: errorToLog(error),
-          statusCode,
-        },
-        "Coach chat request failed.",
-      );
-
-      return res.status(statusCode).json({
-        message: messageForCoachStatus(statusCode),
-        detail,
-      });
-    }
-  });
-
   router.post("/chat/stream", requireCoachUser, async (req, res) => {
     let clientClosed = false;
     let headersStarted = false;
@@ -605,19 +691,39 @@ export function mountCoachRoutes(app) {
       const includeAllHistory = chatRequest.includeAllHistory;
       const attachments = chatRequest.attachments;
       const message = chatRequest.message;
-      const intent = await classifyIntent(message, { aiProvider });
+      const messageTrimmed = String(message ?? "").trim();
       const conversationId = await ensureConversation(db, uid, chatRequest.conversationId);
 
-      const orchestration = await buildCoachOrchestration({
-        db,
-        uid,
-        message,
-        conversationId,
-        windowDays,
-        includeAllHistory,
-        attachments,
-        intent,
-      });
+      let orchestration;
+      let requestedPlanKinds = { workout: false, meal: false };
+
+      if (isLightweightSinglePassCandidate(messageTrimmed, attachments)) {
+        const history = await listConversationMessages(db, uid, conversationId, 2);
+        orchestration = {
+          intent: { primaryIntent: "general", requiredSources: [], secondaryIntents: [], confidence: 1, urgency: "low" },
+          signalPacket: { signals: [] },
+          context: { window: buildEmptyContextWindow(windowDays, includeAllHistory) },
+          tokenCount: 10,
+          toolResults: [],
+          systemPrompt: buildLightweightCoachSystemPrompt(),
+          userPrompt: messageTrimmed,
+          history,
+        };
+      } else {
+        const intent = await classifyIntent(message, { aiProvider });
+        requestedPlanKinds = detectRequestedPlanKinds(message, intent);
+        orchestration = await buildCoachOrchestration({
+          db,
+          uid,
+          message,
+          conversationId,
+          windowDays,
+          includeAllHistory,
+          attachments,
+          intent,
+          requestedPlanKinds,
+        });
+      }
 
       res.writeHead(200, {
         "Content-Type": "text/event-stream; charset=utf-8",
@@ -639,11 +745,15 @@ export function mountCoachRoutes(app) {
 
       let firstTokenSeen = false;
       const streamStart = performance.now();
-      const coachResponse = await aiProvider.streamCoachText({
+      const streamResult = await aiProvider.streamCoachText({
         systemPrompt: orchestration.systemPrompt,
         userPrompt: orchestration.userPrompt,
         history: orchestration.history,
+        generationConfig: buildCoachGenerationConfig(requestedPlanKinds),
         onToken: async (token) => {
+          if (isPlanRequest(requestedPlanKinds)) {
+            return;
+          }
           if (clientClosed) {
             return;
           }
@@ -656,6 +766,17 @@ export function mountCoachRoutes(app) {
           sendSseEvent(res, "token", { token });
         },
       });
+
+      // If the provider returned the raw stream generator, we MUST consume it to trigger execution
+      let coachResponse;
+      if (streamResult && typeof streamResult.stream?.[Symbol.asyncIterator] === "function") {
+        for await (const _chunk of streamResult.stream) {
+          // The onToken callback passed above automatically fires and sends the SSE events
+        }
+        coachResponse = await streamResult.response;
+      } else {
+        coachResponse = streamResult;
+      }
 
       if (clientClosed) {
         streamingInterruptions.labels("client-closed").inc();
@@ -680,15 +801,17 @@ export function mountCoachRoutes(app) {
       await appendConversationMessage(db, uid, conversationId, {
         role: "assistant",
         content: finalReply.replyText,
-        model: coachResponse.model,
-        usage: coachResponse.usage,
+        model: finalReply.model ?? coachResponse.model,
+        usage: finalReply.usage ?? coachResponse.usage,
+        workoutPlan: finalReply.workoutPlan,
+        mealPlan: finalReply.mealPlan,
       });
 
       const finalPayload = {
         conversationId,
         reply: finalReply.replyText,
-        model: coachResponse.model,
-        usage: coachResponse.usage,
+        model: finalReply.model ?? coachResponse.model,
+        usage: finalReply.usage ?? coachResponse.usage,
         contextSignals: orchestration.signalPacket.signals,
         contextWindow: orchestration.context.window,
         attachmentsUsed: attachments.length,
@@ -747,15 +870,17 @@ export function mountCoachRoutes(app) {
       const db = getCoachFirestore();
       const uid = req.coachUser.uid;
       const windowDays = queryValidation.data.contextWindowDays ?? 7;
-      const baseContext = await loadCoachContext(db, uid, {
-        windowDays,
-        includeAllHistory: true,
-      });
+      const requiredHomeSources = ["profile", "nutrition", "workouts", "lifestyle", "steps"];
+      const cachedSignalState = await loadSignalState(db, uid, { windowDays });
+      const signalState = cachedSignalState && signalCoversSources(cachedSignalState.signalPacket, requiredHomeSources)
+        ? cachedSignalState
+        : await recomputeUserSignalState(db, uid, {
+            windowDays,
+            reason: "home-insights-cache-miss",
+            sources: requiredHomeSources,
+          });
       const previousCoachChats = await listRecentConversationContext(db, uid, "");
-      const context = {
-        ...baseContext,
-        previousCoachChats,
-      };
+      const context = buildHomeInsightContextFromSignal(signalState.signalPacket, previousCoachChats);
       const signature = buildHomeInsightSignature(context);
       const cacheKey = buildCacheKey(
         [HOME_INSIGHT_CACHE_VERSION, "home-insight", uid, String(windowDays), signature],
