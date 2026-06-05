@@ -1,7 +1,7 @@
-import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
-import { initializeApp } from "firebase/app";
-import { getReactNativePersistence, initializeAuth } from 'firebase/auth/react-native';
-import { getFirestore } from "firebase/firestore";
+import * as SecureStore from 'expo-secure-store';
+import { initializeApp } from 'firebase/app';
+import { initializeAuth, getReactNativePersistence } from 'firebase/auth/react-native';
+import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -16,8 +16,25 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
+const secureStorage = {
+  async getItem(key: string): Promise<string | null> {
+    return await SecureStore.getItemAsync(key);
+  },
+
+  async setItem(key: string, value: string): Promise<void> {
+    await SecureStore.setItemAsync(key, value);
+  },
+
+  async removeItem(key: string): Promise<void> {
+    await SecureStore.deleteItemAsync(key);
+  },
+};
+
 export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(ReactNativeAsyncStorage),
+  persistence: getReactNativePersistence(secureStorage),
 });
+
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+
+export default app;

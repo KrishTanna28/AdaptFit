@@ -22,7 +22,8 @@
             "minSdkVersion": 26
           }
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "version": "1.0.0",
     "orientation": "portrait",
