@@ -327,6 +327,56 @@ export async function streamCoachMessage(input: {
   return finalPayload;
 }
 
+export async function sendCoachMessage(input: {
+  message: string;
+  conversationId?: string;
+  contextWindowDays?: number;
+  includeAllHistory?: boolean;
+  attachments?: CoachInputAttachment[];
+  signal?: AbortSignal;
+}): Promise<CoachChatResponse> {
+  const baseUrl = requireBaseUrl();
+  const idToken = await getAuthToken();
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/api/coach/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        message: safeTrim(input.message),
+        conversationId: safeTrim(input.conversationId) || undefined,
+        contextWindowDays: input.contextWindowDays,
+        includeAllHistory: input.includeAllHistory ?? true,
+        attachments: Array.isArray(input.attachments)
+          ? input.attachments
+              .map((attachment) => ({
+                name: safeTrim(attachment.name),
+                mimeType: safeTrim(attachment.mimeType) || "text/plain",
+                content: safeTrim(attachment.content),
+              }))
+              .filter((attachment) => attachment.name && attachment.content)
+          : [],
+      }),
+      signal: input.signal,
+    });
+  } catch (error) {
+    if (input.signal?.aborted) {
+      throw error;
+    }
+    throw new Error(buildApiUnreachableMessage(baseUrl));
+  }
+
+  if (!response.ok) {
+    throw await parseApiError(response);
+  }
+
+  return (await response.json()) as CoachChatResponse;
+}
+
 export async function getCoachConversationMessages(input: {
   conversationId: string;
   limit?: number;

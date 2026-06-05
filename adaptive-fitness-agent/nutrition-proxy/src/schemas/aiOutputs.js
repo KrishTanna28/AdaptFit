@@ -169,12 +169,12 @@ function toNonNegativeNumber(value) {
 
 function toRequiredNonNegativeNumber(value) {
   if (value === null || value === undefined || value === "") {
-    return undefined;
+    return 0;
   }
 
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) {
-    return undefined;
+    return 0;
   }
 
   return Math.round(n * 10) / 10;

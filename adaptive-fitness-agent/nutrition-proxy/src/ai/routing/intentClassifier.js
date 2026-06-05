@@ -20,19 +20,10 @@ export const IntentSchema = z
     confidence: z.number().min(0).max(1),
     urgency: z.enum(["low", "medium", "high"]),
     requiredSources: z.array(z.enum(["signals", "workouts", "nutrition", "lifestyle", "steps", "profile", "memory"])),
+    requestsWorkoutPlan: z.boolean().default(false),
+    requestsMealPlan: z.boolean().default(false),
   })
   .strict();
-
-const INTENT_PATTERNS = [
-  { intent: "workout", pattern: /\b(workout|exercise|train|routine|sets?|reps?|lift|cardio|run|session|split)\b/i },
-  { intent: "nutrition", pattern: /\b(meal|food|diet|calorie|protein|carb|fat|breakfast|lunch|dinner|snack|eat)\b/i },
-  { intent: "recovery", pattern: /\b(recover|recovery|sleep|sore|rest|mobility|stretch)\b/i },
-  { intent: "fatigue", pattern: /\b(fatigue|tired|exhausted|burnt out|overtrain|overtraining|low energy)\b/i },
-  { intent: "motivation", pattern: /\b(motivat|discipline|stuck|lazy|encourage|mindset)\b/i },
-  { intent: "adherence", pattern: /\b(consisten|habit|streak|missed|adherence|routine)\b/i },
-  { intent: "hydration", pattern: /\b(water|hydrate|hydration|thirst|fluid)\b/i },
-  { intent: "progress", pattern: /\b(progress|plateau|weight|trend|improve|results|goal|steps?|step count)\b/i },
-];
 
 const SOURCES_BY_INTENT = {
   workout: ["signals", "workouts", "lifestyle", "steps", "profile"],
@@ -59,6 +50,18 @@ const ALLOWED_INTENTS = new Set([
 ]);
 
 const ALLOWED_SOURCES = new Set(["signals", "workouts", "nutrition", "lifestyle", "steps", "profile", "memory"]);
+
+function buildDefaultIntent() {
+  return IntentSchema.parse({
+    primaryIntent: "general",
+    secondaryIntents: [],
+    confidence: 0,
+    urgency: "low",
+    requiredSources: SOURCES_BY_INTENT.general,
+    requestsWorkoutPlan: false,
+    requestsMealPlan: false,
+  });
+}
 
 function normalizeIntent(value) {
   const normalized = String(value ?? "").trim().toLowerCase();
@@ -97,32 +100,67 @@ function repairIntent(raw) {
     requiredSources: requiredSources.length
       ? [...new Set([...requiredSources, ...intentSources])]
       : [...new Set(intentSources.length ? intentSources : SOURCES_BY_INTENT.general)],
+    requestsWorkoutPlan: Boolean(raw.requestsWorkoutPlan),
+    requestsMealPlan: Boolean(raw.requestsMealPlan),
   };
 }
 
-export function classifyIntentWithRegex(message) {
-  const text = String(message ?? "");
-  const matched = INTENT_PATTERNS.filter((item) => item.pattern.test(text)).map((item) => item.intent);
-  const primaryIntent = matched[0] ?? "general";
-  const secondaryIntents = [...new Set(matched.slice(1))];
-  const confidence = matched.length ? Math.min(0.95, 0.72 + matched.length * 0.06) : 0.45;
-  const urgency = /\b(pain|dizzy|injury|hurt|chest|faint|emergency|can't breathe)\b/i.test(text)
-    ? "high"
-    : /\b(today|now|right now|asap|tonight)\b/i.test(text)
-      ? "medium"
-      : "low";
-
-  return IntentSchema.parse({
-    primaryIntent,
-    secondaryIntents,
-    confidence,
-    urgency,
-    requiredSources: SOURCES_BY_INTENT[primaryIntent] ?? SOURCES_BY_INTENT.general,
-  });
+function buildIntentGenerationConfig() {
+  return {
+    temperature: 0,
+    topP: 0.8,
+    responseMimeType: "application/json",
+    responseSchema: {
+      type: "object",
+      properties: {
+        primaryIntent: {
+          type: "string",
+          enum: [
+            "workout",
+            "nutrition",
+            "recovery",
+            "fatigue",
+            "motivation",
+            "adherence",
+            "hydration",
+            "progress",
+            "general",
+          ],
+        },
+        secondaryIntents: {
+          type: "array",
+          items: { type: "string" },
+        },
+        confidence: { type: "number" },
+        urgency: {
+          type: "string",
+          enum: ["low", "medium", "high"],
+        },
+        requiredSources: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: ["signals", "workouts", "nutrition", "lifestyle", "steps", "profile", "memory"],
+          },
+        },
+        requestsWorkoutPlan: { type: "boolean" },
+        requestsMealPlan: { type: "boolean" },
+      },
+      required: [
+        "primaryIntent",
+        "secondaryIntents",
+        "confidence",
+        "urgency",
+        "requiredSources",
+        "requestsWorkoutPlan",
+        "requestsMealPlan",
+      ],
+    },
+  };
 }
 
 export async function classifyIntent(message, { aiProvider } = {}) {
-  const fallback = classifyIntentWithRegex(message);
+  const fallback = buildDefaultIntent();
 
   if (!aiProvider?.generateCoachText) {
     return fallback;
@@ -133,6 +171,7 @@ export async function classifyIntent(message, { aiProvider } = {}) {
     const response = await aiProvider.generateCoachText({
       ...prompt,
       history: [],
+      generationConfig: buildIntentGenerationConfig(),
     });
     return parseLlmJsonWithSchema({
       text: response.text,

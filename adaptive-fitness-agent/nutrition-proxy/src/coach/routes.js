@@ -1,6 +1,5 @@
 import express from "express";
 import { createHash } from "node:crypto";
-
 import {
   ensureConversation,
   appendConversationMessage,
@@ -172,7 +171,7 @@ function parsePlanBundle(text) {
   });
 }
 
-function parseCoachPlans(text) {
+function parseCoachPlans(text, requestedPlanKinds = { workout: false, meal: false }) {
   const planBundle = parsePlanBundle(text);
   let workoutPlan = null;
   let mealPlan = null;
@@ -182,19 +181,31 @@ function parseCoachPlans(text) {
     workoutPlan = planBundle.workoutPlan ?? null;
     mealPlan = planBundle.mealPlan ?? null;
   } else {
-    workoutPlan = parseWorkoutPlan(text);
-    mealPlan = parseMealPlan(text);
-
     try {
       const cleaned = extractJsonText(text);
       if (cleaned) {
         const parsed = JSON.parse(cleaned);
-        if (parsed && typeof parsed.reply === "string") {
-          replyFallback = parsed.reply;
+        if (parsed && typeof parsed === "object") {
+          if (typeof parsed.reply === "string") {
+            replyFallback = parsed.reply;
+          }
+          if (requestedPlanKinds.workout && parsed.workoutPlan && typeof parsed.workoutPlan === "object") {
+             workoutPlan = parseWorkoutPlan(JSON.stringify(parsed.workoutPlan));
+          }
+          if (requestedPlanKinds.meal && parsed.mealPlan && typeof parsed.mealPlan === "object") {
+             mealPlan = parseMealPlan(JSON.stringify(parsed.mealPlan));
+          }
         }
       }
     } catch {
       // Ignore parser errors for fallback
+    }
+
+    if (requestedPlanKinds.workout && !workoutPlan) {
+      workoutPlan = parseWorkoutPlan(text);
+    }
+    if (requestedPlanKinds.meal && !mealPlan) {
+      mealPlan = parseMealPlan(text);
     }
   }
 
@@ -356,54 +367,8 @@ function buildLightweightCoachSystemPrompt() {
   ].join("\n");
 }
 
-function detectRequestedPlanKinds(message, intent) {
-  const text = String(message ?? "").toLowerCase();
-  const primaryIntent = String(intent?.primaryIntent ?? "").toLowerCase();
-  const secondaryIntents = Array.isArray(intent?.secondaryIntents)
-    ? intent.secondaryIntents.map((item) => String(item ?? "").toLowerCase())
-    : [];
-  const intents = new Set([primaryIntent, ...secondaryIntents]);
-  const planTerm = /\b(plan|routine|program|schedule|split|prep|regimen)\b/i.test(text);
-  const actionTerm = /\b(make|create|build|give|generate|suggest|recommend)\b/i.test(text);
-  const workoutLike =
-    /\b(workout|exercise|training|train|gym|lift|strength|cardio|run|routine|split|sets?|reps?)\b/i.test(text) ||
-    intents.has("workout");
-  const mealLike =
-    /\b(meal|diet|nutrition|food|eat|breakfast|lunch|dinner|snacks?|protein|calorie|macro)\b/i.test(text) ||
-    /\ba\s*meal\b/i.test(text) ||
-    intents.has("nutrition");
-  const combinedPlan =
-    planTerm &&
-    workoutLike &&
-    mealLike &&
-    (
-      /\b(workout|exercise|training|gym|strength|cardio|run)\b.{0,50}\b(meal|diet|nutrition|food|macro)\b/i.test(text) ||
-      /\b(meal|diet|nutrition|food|macro)\b.{0,50}\b(workout|exercise|training|gym|strength|cardio|run)\b/i.test(text) ||
-      /\bboth\b/i.test(text)
-    );
-  const explicitWorkoutPlan =
-    /\b(workout|exercise|training|gym|strength|cardio|run)\s+(plan|routine|program|schedule|split|regimen)\b/i.test(text) ||
-    /\b(plan|routine|program|schedule|split|regimen)\s+(a|an|my|for)?\s*(workout|exercise|training|gym|strength|cardio|run)\b/i.test(text) ||
-    /\bplan\s+(me\s+)?(a|an|my)?\s*(workout|exercise|training|gym|strength|cardio|run)\b/i.test(text) ||
-    combinedPlan ||
-    (actionTerm && workoutLike && planTerm);
-  const explicitMealPlan =
-    /\b(meal|diet|nutrition|food|macro)\s+(plan|prep|program|schedule|regimen)\b/i.test(text) ||
-    /\b(plan|prep|program|schedule|regimen)\s+(a|an|my|for)?\s*(meal|diet|nutrition|food|macro)\b/i.test(text) ||
-    /\bplan\s+(me\s+)?(a|an|my)?\s*(meal|diet|nutrition|food|macro)\b/i.test(text) ||
-    /\bplan\s+(me\s+)?(a|an|my)?\s*a\s*meal\b/i.test(text) ||
-    /\b(what should i eat|what to eat|meals? for|foods? for)\b/i.test(text) ||
-    combinedPlan ||
-    (actionTerm && mealLike && planTerm);
-
-  return {
-    workout: Boolean(explicitWorkoutPlan),
-    meal: Boolean(explicitMealPlan),
-  };
-}
-
 function isPlanRequest(requestedPlanKinds) {
-  return Boolean(requestedPlanKinds.workout || requestedPlanKinds.meal);
+  return Boolean(requestedPlanKinds?.workout || requestedPlanKinds?.meal);
 }
 
 function buildCoachGenerationConfig(requestedPlanKinds) {
@@ -411,9 +376,90 @@ function buildCoachGenerationConfig(requestedPlanKinds) {
     return undefined;
   }
 
+  const responseSchema = {
+    type: "object",
+    properties: {
+      type: { type: "string" },
+      reply: { type: "string" },
+    },
+    required: ["type", "reply"],
+  };
+
+  if (requestedPlanKinds.workout) {
+    responseSchema.properties.workoutPlan = {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        exercises: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              sets: { type: "integer" },
+              reps: { type: "integer" },
+            },
+            required: ["name", "sets", "reps"],
+          },
+        },
+      },
+      required: ["title", "exercises"],
+    };
+    responseSchema.required.push("workoutPlan");
+  }
+
+  if (requestedPlanKinds.meal) {
+    responseSchema.properties.mealPlan = {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        meals: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              mealType: { type: "string" },
+              name: { type: "string" },
+              items: { type: "array", items: { type: "string" } },
+              calories: { type: "number" },
+              protein: { type: "number" },
+              carbs: { type: "number" },
+              fat: { type: "number" },
+              fiber: { type: "number" },
+              sodiumMg: { type: "number" },
+              potassiumMg: { type: "number" },
+              calciumMg: { type: "number" },
+              ironMg: { type: "number" },
+              vitaminCMg: { type: "number" },
+            },
+            required: [
+              "mealType",
+              "name",
+              "items",
+              "calories",
+              "protein",
+              "carbs",
+              "fat",
+              "fiber",
+              "sodiumMg",
+              "potassiumMg",
+              "calciumMg",
+              "ironMg",
+              "vitaminCMg",
+            ],
+          },
+        },
+      },
+      required: ["title", "meals"],
+    };
+    responseSchema.required.push("mealPlan");
+  }
+
   return {
     temperature: 0.2,
     topP: 0.85,
+    responseMimeType: "application/json",
+    responseSchema,
   };
 }
 
@@ -444,6 +490,71 @@ function buildCombinedPlanReply({ workoutPlan, mealPlan, modelReply }) {
 
   const reply = String(modelReply ?? "").trim();
   return reply || fallbackParts.join(" ");
+}
+
+function buildPlanJsonRetrySystemPrompt(requestedPlanKinds) {
+  const requirements = [
+    "You are Aether's structured plan formatter.",
+    "Return ONLY valid JSON. No markdown. No prose outside JSON.",
+    "Generate a complete structured plan for the user's request.",
+    "Use the provided context as source material, but do not mention backend labels.",
+    "The JSON must match the response schema exactly.",
+    "The reply field must be one short sentence.",
+  ];
+
+  if (requestedPlanKinds.workout && requestedPlanKinds.meal) {
+    requirements.push("Set type to both and include both workoutPlan and mealPlan.");
+  } else if (requestedPlanKinds.workout) {
+    requirements.push("Set type to workout and include workoutPlan only.");
+  } else if (requestedPlanKinds.meal) {
+    requirements.push("Set type to meal and include mealPlan only.");
+  }
+
+  requirements.push(
+    "Workout exercises must have name, sets, and reps.",
+    "Meal plan meals must use mealType breakfast, lunch, dinner, or snacks.",
+    "Every meal must include items, calories, protein, carbs, fat, fiber, sodiumMg, potassiumMg, calciumMg, ironMg, and vitaminCMg as numbers.",
+  );
+
+  return requirements.join("\n");
+}
+
+function buildPlanJsonRetryUserPrompt({ message, orchestration, firstResponseText }) {
+  return [
+    "User request:",
+    message,
+    "Requested plan kinds:",
+    JSON.stringify(orchestration.requestedPlanKinds),
+    "Deterministic context packet:",
+    orchestration.userPrompt,
+    "Previous invalid/non-JSON plan response to convert or replace:",
+    String(firstResponseText ?? "").slice(0, 6000),
+    "Return the final structured plan JSON now.",
+  ].join("\n\n");
+}
+
+async function generateStructuredPlanRetry({ message, orchestration, firstResponseText }) {
+  if (!isPlanRequest(orchestration.requestedPlanKinds)) {
+    return null;
+  }
+
+  try {
+    const retryResponse = await aiProvider.generateCoachText({
+      systemPrompt: buildPlanJsonRetrySystemPrompt(orchestration.requestedPlanKinds),
+      userPrompt: buildPlanJsonRetryUserPrompt({
+        message,
+        orchestration,
+        firstResponseText,
+      }),
+      history: [],
+      generationConfig: buildCoachGenerationConfig(orchestration.requestedPlanKinds),
+    });
+
+    return parseCoachPlans(retryResponse.text, orchestration.requestedPlanKinds);
+  } catch (error) {
+    logger.warn({ err: errorToLog(error) }, "Structured plan retry failed.");
+    return null;
+  }
 }
 
 function applySafetyFallback({ replyText, workoutPlan, mealPlan, signalPacket }) {
@@ -481,7 +592,25 @@ function signalCoversSources(signalPacket, sources) {
 }
 
 async function finalizeCoachResponse({ coachResponse, orchestration, message }) {
-  let { planBundle, workoutPlan, mealPlan, replyFallback } = parseCoachPlans(coachResponse.text);
+  console.log("=== RAW PRIMARY LLM RESPONSE ===");
+  console.log(coachResponse.text);
+  console.log("================================");
+
+  let { planBundle, workoutPlan, mealPlan, replyFallback } = parseCoachPlans(coachResponse.text, orchestration.requestedPlanKinds);
+
+  if (isPlanRequest(orchestration.requestedPlanKinds) && !workoutPlan && !mealPlan) {
+    const retryPlans = await generateStructuredPlanRetry({
+      message,
+      orchestration,
+      firstResponseText: coachResponse.text,
+    });
+    if (retryPlans?.workoutPlan || retryPlans?.mealPlan) {
+      planBundle = retryPlans.planBundle;
+      workoutPlan = retryPlans.workoutPlan;
+      mealPlan = retryPlans.mealPlan;
+      replyFallback = retryPlans.replyFallback;
+    }
+  }
 
   let replyText = workoutPlan || mealPlan
     ? buildCombinedPlanReply({
@@ -490,6 +619,7 @@ async function finalizeCoachResponse({ coachResponse, orchestration, message }) 
         modelReply: planBundle?.reply,
       })
     : (replyFallback ?? coachResponse.text);
+
   const safetyApplied = applySafetyFallback({
     replyText,
     workoutPlan,
@@ -510,9 +640,31 @@ async function finalizeCoachResponse({ coachResponse, orchestration, message }) 
     workoutPlan,
     mealPlan,
   });
+  console.log(criticApplied);
+
+  // If the critic refined the output and we didn't have a plan initially, 
+  // it may have successfully fixed the broken JSON. Let's try to parse it again!
+  let finalReplyText = criticApplied.replyText;
+  if (criticApplied.refined && !workoutPlan && !mealPlan) {
+    const reParsed = parseCoachPlans(finalReplyText, orchestration.requestedPlanKinds);
+    if (reParsed.workoutPlan || reParsed.mealPlan) {
+      workoutPlan = reParsed.workoutPlan ?? null;
+      mealPlan = reParsed.mealPlan ?? null;
+      finalReplyText = buildCombinedPlanReply({
+        workoutPlan,
+        mealPlan,
+        modelReply: reParsed.planBundle?.reply,
+      });
+    }
+  }
+
+  if (isPlanRequest(orchestration.requestedPlanKinds) && !workoutPlan && !mealPlan) {
+    // Never accept plain text for a plan request. Force a clean fallback.
+    finalReplyText = "I had trouble formatting your plan into the required structure. Please try asking again.";
+  }
 
   return {
-    replyText: criticApplied.replyText,
+    replyText: finalReplyText,
     workoutPlan,
     mealPlan,
     critic: criticApplied.critic,
@@ -611,13 +763,16 @@ async function buildCoachOrchestration({ db, uid, message, conversationId, windo
     source: "coach-route",
   }).catch(() => {});
 
+  const systemPrompt = buildCompressedCoachSystemPrompt(requestedPlanKinds);
+
   return {
+    requestedPlanKinds,
     intent,
     signalPacket: signalState.signalPacket,
     signalSignature: signalState.signature,
     signalCacheSource: signalState.cacheSource,
     signalRecomputed: signalState.recomputed,
-    systemPrompt: buildCompressedCoachSystemPrompt(requestedPlanKinds),
+    systemPrompt,
     userPrompt: buildCompressedCoachUserPrompt({
       promptPacket: compressed.packet,
       message,
@@ -663,12 +818,135 @@ async function requireCoachUser(req, res, next) {
 export function mountCoachRoutes(app) {
   const router = express.Router();
 
+  router.post("/chat", requireCoachUser, async (req, res) => {
+    try {
+      const requestValidation = safeValidate(CoachChatRequestSchema, req.body ?? {}, "coach chat request");
+      if (!requestValidation.ok) {
+        return res.status(400).json(validationErrorResponse(requestValidation));
+      }
+
+      const chatRequest = requestValidation.data;
+      const db = getCoachFirestore();
+      const uid = req.coachUser.uid;
+      logger.info(
+        {
+          uid,
+          messageLength: String(chatRequest.message ?? "").length,
+        },
+        "Coach chat request received.",
+      );
+
+      const windowDays = chatRequest.contextWindowDays;
+      const includeAllHistory = chatRequest.includeAllHistory;
+      const attachments = chatRequest.attachments;
+      const message = chatRequest.message;
+      const messageTrimmed = String(message ?? "").trim();
+      const conversationId = await ensureConversation(db, uid, chatRequest.conversationId);
+
+      let orchestration;
+      let requestedPlanKinds = { workout: false, meal: false };
+
+      if (isLightweightSinglePassCandidate(messageTrimmed, attachments)) {
+        const history = await listConversationMessages(db, uid, conversationId, 2);
+        orchestration = {
+          requestedPlanKinds,
+          intent: { primaryIntent: "general", requiredSources: [], secondaryIntents: [], confidence: 1, urgency: "low" },
+          signalPacket: { signals: [] },
+          context: { window: buildEmptyContextWindow(windowDays, includeAllHistory) },
+          tokenCount: 10,
+          toolResults: [],
+          systemPrompt: buildLightweightCoachSystemPrompt(),
+          userPrompt: messageTrimmed,
+          history,
+        };
+      } else {
+        const intent = await classifyIntent(message, { aiProvider });
+        requestedPlanKinds = {
+          workout: Boolean(intent.requestsWorkoutPlan),
+          meal: Boolean(intent.requestsMealPlan),
+        };
+        orchestration = await buildCoachOrchestration({
+          db,
+          uid,
+          message,
+          conversationId,
+          windowDays,
+          includeAllHistory,
+          attachments,
+          intent,
+          requestedPlanKinds,
+        });
+      }
+
+      const coachResponse = await aiProvider.generateCoachText({
+        systemPrompt: orchestration.systemPrompt,
+        userPrompt: orchestration.userPrompt,
+        history: orchestration.history,
+        generationConfig: buildCoachGenerationConfig(requestedPlanKinds),
+      });
+
+      const finalReply = await finalizeCoachResponse({
+        coachResponse,
+        orchestration,
+        message,
+      });
+
+      await appendConversationMessage(db, uid, conversationId, {
+        role: "user",
+        content: message,
+      });
+
+      await appendConversationMessage(db, uid, conversationId, {
+        role: "assistant",
+        content: finalReply.replyText,
+        model: finalReply.model ?? coachResponse.model,
+        usage: finalReply.usage ?? coachResponse.usage,
+        workoutPlan: finalReply.workoutPlan,
+        mealPlan: finalReply.mealPlan,
+      });
+
+      const payload = {
+        conversationId,
+        reply: finalReply.replyText,
+        model: finalReply.model ?? coachResponse.model,
+        usage: finalReply.usage ?? coachResponse.usage,
+        contextSignals: orchestration.signalPacket.signals,
+        contextWindow: orchestration.context.window,
+        attachmentsUsed: attachments.length,
+        workoutPlan: finalReply.workoutPlan ?? undefined,
+        mealPlan: finalReply.mealPlan ?? undefined,
+        toolResults: orchestration.toolResults.length ? orchestration.toolResults : undefined,
+      };
+
+      return sendValidatedJson(res, CoachChatResponseSchema, payload, "coach chat response");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unknown error";
+      const statusCode = inferCoachErrorStatus(detail, 500);
+
+      logger.error(
+        {
+          err: errorToLog(error),
+          statusCode,
+        },
+        "Coach chat request failed.",
+      );
+
+      return res.status(statusCode).json({
+        message: messageForCoachStatus(statusCode),
+        detail,
+      });
+    }
+  });
+
   router.post("/chat/stream", requireCoachUser, async (req, res) => {
     let clientClosed = false;
     let headersStarted = false;
+    let responseFinished = false;
 
-    req.on("close", () => {
-      clientClosed = true;
+    res.on("close", () => {
+      if (!responseFinished) {
+        clientClosed = true;
+      }
     });
 
     try {
@@ -700,6 +978,7 @@ export function mountCoachRoutes(app) {
       if (isLightweightSinglePassCandidate(messageTrimmed, attachments)) {
         const history = await listConversationMessages(db, uid, conversationId, 2);
         orchestration = {
+          requestedPlanKinds,
           intent: { primaryIntent: "general", requiredSources: [], secondaryIntents: [], confidence: 1, urgency: "low" },
           signalPacket: { signals: [] },
           context: { window: buildEmptyContextWindow(windowDays, includeAllHistory) },
@@ -711,7 +990,10 @@ export function mountCoachRoutes(app) {
         };
       } else {
         const intent = await classifyIntent(message, { aiProvider });
-        requestedPlanKinds = detectRequestedPlanKinds(message, intent);
+        requestedPlanKinds = {
+          workout: Boolean(intent.requestsWorkoutPlan),
+          meal: Boolean(intent.requestsMealPlan),
+        };
         orchestration = await buildCoachOrchestration({
           db,
           uid,
@@ -822,6 +1104,7 @@ export function mountCoachRoutes(app) {
       const finalValidation = safeValidate(CoachChatResponseSchema, finalPayload, "coach stream final response");
       sendSseEvent(res, "final", finalValidation.ok ? finalValidation.data : finalPayload);
       sendSseEvent(res, "done", { ok: true });
+      responseFinished = true;
       return res.end();
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown error";
@@ -846,6 +1129,7 @@ export function mountCoachRoutes(app) {
           detail,
           statusCode,
         });
+        responseFinished = true;
         return res.end();
       }
 

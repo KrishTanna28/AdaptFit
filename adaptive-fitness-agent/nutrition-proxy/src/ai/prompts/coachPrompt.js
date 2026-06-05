@@ -29,33 +29,18 @@ export function buildCompressedCoachSystemPrompt(requestedPlanKinds = { workout:
 
   const jsonRules = [
     "Keep within these max token guidelines: weekly plans 1000-1500; hard cap 2048.",
-    "Plan output:",
+    "You MUST generate a complete workout or meal plan even when historical logs are missing. Missing data is not a reason to refuse plan generation—make reasonable assumptions and continue.",
+    "The response MUST be a single JSON object matching the required schema.",
+    "The 'reply' field should be a short, user-friendly sentence to introduce the plan.",
+    "For meal plans, every meal must include numeric calories, protein, carbs, fat, fiber, sodiumMg, potassiumMg, calciumMg, ironMg, and vitaminCMg estimates.",
   ];
 
   if (isBoth) {
-    jsonRules.push(
-      "The user requested BOTH a workout plan and a meal plan. Return ONLY ONE JSON object matching this exact schema (no markdown, no extra text):",
-      '{"type": "both", "reply": "Here is your plan.", "workoutPlan": {"title": "Full Body", "exercises": [{"name": "Squats", "sets": 3, "reps": 10}]}, "mealPlan": {"title": "High Protein", "meals": [{"mealType": "lunch", "name": "Chicken Salad", "items": ["150g chicken", "greens"], "calories": 400, "protein": 40, "carbs": 10, "fat": 15, "fiber": 5, "sodiumMg": 300, "potassiumMg": 400, "calciumMg": 50, "ironMg": 2, "vitaminCMg": 10}]}}',
-      "The 'type' field MUST be 'both'.",
-      "Both workoutPlan and mealPlan MUST NOT be null.",
-      "The 'reply' field is required and must be one short sentence."
-    );
+    jsonRules.push("The user requested BOTH a workout and a meal plan. The 'type' field must be 'both'.");
   } else if (isWorkout) {
-    jsonRules.push(
-      "The user requested a workout plan. Return ONLY ONE JSON object matching this exact schema (no markdown, no extra text):",
-      '{"type": "workout", "reply": "Here is your workout plan.", "workoutPlan": {"title": "Full Body", "exercises": [{"name": "Squats", "sets": 3, "reps": 10}]}, "mealPlan": null}',
-      "The 'type' field MUST be 'workout'.",
-      "workoutPlan MUST NOT be null. mealPlan MUST be null.",
-      "The 'reply' field is required and must be one short sentence."
-    );
+    jsonRules.push("The user requested a workout plan. The 'type' field must be 'workout'. Do not include a mealPlan field.");
   } else if (isMeal) {
-    jsonRules.push(
-      "The user requested a meal plan. Return ONLY ONE JSON object matching this exact schema (no markdown, no extra text):",
-      '{"type": "meal", "reply": "Here is your meal plan.", "workoutPlan": null, "mealPlan": {"title": "High Protein", "meals": [{"mealType": "lunch", "name": "Chicken Salad", "items": ["150g chicken", "greens"], "calories": 400, "protein": 40, "carbs": 10, "fat": 15, "fiber": 5, "sodiumMg": 300, "potassiumMg": 400, "calciumMg": 50, "ironMg": 2, "vitaminCMg": 10}]}}',
-      "The 'type' field MUST be 'meal'.",
-      "mealPlan MUST NOT be null. workoutPlan MUST be null.",
-      "The 'reply' field is required and must be one short sentence."
-    );
+    jsonRules.push("The user requested a meal plan. The 'type' field must be 'meal'. Do not include a workoutPlan field.");
   }
 
   return [...basePrompt, ...jsonRules, "Do not use markdown formatting."].join("\n");
@@ -91,7 +76,7 @@ export function buildCompressedCoachUserPrompt({ promptPacket, message, attachme
     attachmentSection,
     "User question:",
     message,
-    "Answer using only the packet and attachments. Treat currentDateKey as today.",
+    "Use the packet as the source of truth for goals, preferences, restrictions, and targets, but you must generate reasonable meals and workouts that satisfy these constraints. Treat currentDateKey as today.",
   ]
     .filter(Boolean)
     .join("\n\n");

@@ -38,7 +38,7 @@ import {
   deleteCoachConversation,
   getCoachConversationMessages,
   getCoachConversations,
-  streamCoachMessage,
+  sendCoachMessage,
   transcribeCoachAudio,
   type CoachChatMessage,
   type CoachConversationSummary,
@@ -1063,6 +1063,7 @@ export default function AICoachScreen() {
     }
 
     coachAbortControllerRef.current?.abort();
+    setDraftMessage("");
     setIsSending(false);
     setPendingAssistantId(null);
   };
@@ -1102,40 +1103,21 @@ export default function AICoachScreen() {
       });
       setPendingAssistantId(assistantMessageId);
 
-      let streamedReply = "";
-      let hasShownStreamedReply = false;
       const abortController = new AbortController();
       coachAbortControllerRef.current = abortController;
-      const response = await streamCoachMessage({
+      const response = await sendCoachMessage({
         message: outboundPrompt,
         conversationId,
         includeAllHistory: true,
         signal: abortController.signal,
-        onToken: (token) => {
-          if (
-            coachRequestIdRef.current !== coachRequestId ||
-            stoppedCoachRequestIdsRef.current.has(coachRequestId)
-          ) {
-            return;
-          }
-
-          streamedReply += token;
-          const cleanedStream = normalizeAssistantReply(streamedReply);
-          if (!cleanedStream) {
-            return;
-          }
-
-          if (!hasShownStreamedReply) {
-            hasShownStreamedReply = true;
-            setPendingAssistantId(null);
-          }
-
-          updateMessage(assistantMessageId, {
-            content: cleanedStream,
-          });
-          scrollToBottom();
-        },
       });
+
+      if (
+        coachRequestIdRef.current !== coachRequestId ||
+        stoppedCoachRequestIdsRef.current.has(coachRequestId)
+      ) {
+        return;
+      }
 
       if (!conversationId) {
         setConversationId(response.conversationId);
