@@ -557,6 +557,114 @@ async function generateStructuredPlanRetry({ message, orchestration, firstRespon
   }
 }
 
+function splitMacroCalories(totalCalories) {
+  const calories = Math.max(1200, Math.round(Number(totalCalories) || 2200));
+  const protein = Math.round((calories * 0.22) / 4);
+  const carbs = Math.round((calories * 0.48) / 4);
+  const fat = Math.round((calories * 0.3) / 9);
+  return { calories, protein, carbs, fat };
+}
+
+function buildFallbackMeal(mealType, name, items, calorieShare, targets) {
+  const macros = splitMacroCalories(targets.calories * calorieShare);
+  const micronutrientScale = Math.max(0.7, Math.min(1.6, macros.calories / 600));
+
+  return {
+    mealType,
+    name,
+    items,
+    calories: macros.calories,
+    protein: macros.protein,
+    carbs: macros.carbs,
+    fat: macros.fat,
+    fiber: Math.round(8 * micronutrientScale),
+    sodiumMg: Math.round(350 * micronutrientScale),
+    potassiumMg: Math.round(650 * micronutrientScale),
+    calciumMg: Math.round(180 * micronutrientScale),
+    ironMg: Math.round(3 * micronutrientScale * 10) / 10,
+    vitaminCMg: Math.round(35 * micronutrientScale),
+  };
+}
+
+function buildFallbackMealPlan(signalPacket) {
+  const profile = signalPacket?.profile ?? {};
+  const dietType = String(profile.dietType ?? "").toLowerCase();
+  const isVegetarian = dietType.includes("veg") || dietType.includes("plant");
+  const calorieTarget = Number(signalPacket?.targets?.calorieTarget ?? 0);
+  const proteinTarget = Number(signalPacket?.targets?.proteinTarget ?? 0);
+  const targets = {
+    calories: calorieTarget > 0 ? calorieTarget : 2200,
+    protein: proteinTarget > 0 ? proteinTarget : 110,
+  };
+
+  const meals = isVegetarian
+    ? [
+        buildFallbackMeal("breakfast", "Protein Oats and Yogurt Bowl", ["Oats", "Greek yogurt or soy yogurt", "Berries", "Chia seeds", "Nut butter"], 0.25, targets),
+        buildFallbackMeal("lunch", "Lentil Rice Power Bowl", ["Lentils", "Brown rice or quinoa", "Mixed vegetables", "Olive oil dressing"], 0.3, targets),
+        buildFallbackMeal("snacks", "Protein Shake and Nuts", ["Protein powder", "Banana", "Milk or soy milk", "Almonds"], 0.18, targets),
+        buildFallbackMeal("dinner", "Chickpea Paneer Dinner", ["Chickpeas", "Paneer or tofu", "Spinach", "Whole-wheat roti", "Salad"], 0.27, targets),
+      ]
+    : [
+        buildFallbackMeal("breakfast", "High Protein Breakfast Bowl", ["Oats", "Greek yogurt", "Berries", "Chia seeds", "Nut butter"], 0.25, targets),
+        buildFallbackMeal("lunch", "Lean Protein Rice Bowl", ["Lean protein", "Brown rice or quinoa", "Mixed vegetables", "Olive oil dressing"], 0.3, targets),
+        buildFallbackMeal("snacks", "Protein Shake and Fruit", ["Protein powder", "Banana", "Milk", "Nuts"], 0.18, targets),
+        buildFallbackMeal("dinner", "Protein Dinner Plate", ["Protein source", "Potatoes or roti", "Vegetables", "Salad"], 0.27, targets),
+      ];
+
+  return {
+    title: isVegetarian ? "Vegetarian Daily Meal Plan" : "Daily Meal Plan",
+    meals,
+  };
+}
+
+function buildFallbackWorkoutPlan(signalPacket) {
+  const safeToTrainHard = signalPacket?.safety?.safeToTrainHard !== false;
+  if (!safeToTrainHard) {
+    return {
+      title: "Recovery-Friendly Full Body Session",
+      exercises: [
+        { name: "Cat Cow", sets: 2, reps: 8 },
+        { name: "Bodyweight Squat", sets: 2, reps: 10 },
+        { name: "Incline Push-up", sets: 2, reps: 8 },
+        { name: "Glute Bridge", sets: 2, reps: 10 },
+        { name: "Dead Bug", sets: 2, reps: 8 },
+      ],
+    };
+  }
+
+  return {
+    title: "Full Body Strength Plan",
+    exercises: [
+      { name: "Goblet Squat", sets: 3, reps: 10 },
+      { name: "Push-up", sets: 3, reps: 10 },
+      { name: "Dumbbell Row", sets: 3, reps: 10 },
+      { name: "Dumbbell Overhead Press", sets: 3, reps: 10 },
+      { name: "Plank", sets: 3, reps: 30 },
+    ],
+  };
+}
+
+function buildStructuredFallbackPlans(orchestration) {
+  const workoutPlan = orchestration.requestedPlanKinds?.workout
+    ? buildFallbackWorkoutPlan(orchestration.signalPacket)
+    : null;
+  const mealPlan = orchestration.requestedPlanKinds?.meal
+    ? buildFallbackMealPlan(orchestration.signalPacket)
+    : null;
+
+  return {
+    planBundle: {
+      type: workoutPlan && mealPlan ? "both" : workoutPlan ? "workout" : "meal",
+      reply: "I made a structured plan you can load into the app.",
+      workoutPlan,
+      mealPlan,
+    },
+    workoutPlan,
+    mealPlan,
+    replyFallback: null,
+  };
+}
+
 function applySafetyFallback({ replyText, workoutPlan, mealPlan, signalPacket }) {
   const safety = validateCoachPlanSafety({ signalPacket, workoutPlan, mealPlan });
   if (safety.allowed) {
@@ -564,12 +672,15 @@ function applySafetyFallback({ replyText, workoutPlan, mealPlan, signalPacket })
   }
 
   const primaryViolation = safety.violations.find((item) => item.severity === "high") ?? safety.violations[0];
+  const removeWorkout = safety.violations.some((item) => item.id === "workout-volume-too-high");
+  const removeMeal = safety.violations.some((item) => item.id === "meal-plan-too-low-calorie");
+
   return {
     replyText:
       primaryViolation?.message ||
       "I am adjusting this to stay aligned with your recovery and safety signals today.",
-    workoutPlan: undefined,
-    mealPlan: undefined,
+    workoutPlan: removeWorkout ? undefined : workoutPlan,
+    mealPlan: removeMeal ? undefined : mealPlan,
     safety,
   };
 }
@@ -610,6 +721,14 @@ async function finalizeCoachResponse({ coachResponse, orchestration, message }) 
       mealPlan = retryPlans.mealPlan;
       replyFallback = retryPlans.replyFallback;
     }
+  }
+
+  if (isPlanRequest(orchestration.requestedPlanKinds) && !workoutPlan && !mealPlan) {
+    const fallbackPlans = buildStructuredFallbackPlans(orchestration);
+    planBundle = fallbackPlans.planBundle;
+    workoutPlan = fallbackPlans.workoutPlan;
+    mealPlan = fallbackPlans.mealPlan;
+    replyFallback = fallbackPlans.replyFallback;
   }
 
   let replyText = workoutPlan || mealPlan
@@ -659,8 +778,14 @@ async function finalizeCoachResponse({ coachResponse, orchestration, message }) 
   }
 
   if (isPlanRequest(orchestration.requestedPlanKinds) && !workoutPlan && !mealPlan) {
-    // Never accept plain text for a plan request. Force a clean fallback.
-    finalReplyText = "I had trouble formatting your plan into the required structure. Please try asking again.";
+    const fallbackPlans = buildStructuredFallbackPlans(orchestration);
+    workoutPlan = fallbackPlans.workoutPlan;
+    mealPlan = fallbackPlans.mealPlan;
+    finalReplyText = buildCombinedPlanReply({
+      workoutPlan,
+      mealPlan,
+      modelReply: fallbackPlans.planBundle.reply,
+    });
   }
 
   return {

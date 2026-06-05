@@ -10,6 +10,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
@@ -415,6 +416,9 @@ export default function AICoachScreen() {
   const stoppedCoachRequestIdsRef = useRef<Set<number>>(new Set());
   const sidebarTranslateX = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
 
+  const { height: screenHeight } = useWindowDimensions();
+  const sidebarSkeletonCount = Math.max(3, Math.floor(screenHeight / 72));
+
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [conversations, setConversations] = useState<CoachConversationSummary[]>([]);
   const [messages, setMessages] = useState<CoachChatMessage[]>([]);
@@ -430,7 +434,7 @@ export default function AICoachScreen() {
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [loadingWorkoutMessageId, setLoadingWorkoutMessageId] = useState<string | null>(null);
-  const [loadingMealMessageId, setLoadingMealMessageId] = useState<string | null>(null);
+  const [loadingMealAction, setLoadingMealAction] = useState<string | null>(null);
   const [profileForCalories, setProfileForCalories] = useState<UserMetProfile | null>(null);
 
   const [animatedTitle, setAnimatedTitle] = useState("");
@@ -979,7 +983,9 @@ export default function AICoachScreen() {
     messageId: string,
     mealIndex?: number,
   ) => {
-    if (loadingMealMessageId) {
+    const actionKey = typeof mealIndex === "number" ? `${messageId}-${mealIndex}` : `${messageId}-ALL`;
+
+    if (loadingMealAction) {
       return;
     }
 
@@ -1003,7 +1009,7 @@ export default function AICoachScreen() {
       return;
     }
 
-    setLoadingMealMessageId(messageId);
+    setLoadingMealAction(actionKey);
     const todayKey = getTodayDateKey();
     const baseTimeMs = Date.now();
 
@@ -1048,7 +1054,7 @@ export default function AICoachScreen() {
         ),
       });
     } finally {
-      setLoadingMealMessageId(null);
+      setLoadingMealAction(null);
     }
   };
 
@@ -1199,7 +1205,7 @@ export default function AICoachScreen() {
 
           {isLoadingConversations ? (
             <View style={styles.sidebarSkeletonList}>
-              {[0, 1, 2].map((index) => (
+              {Array.from({ length: sidebarSkeletonCount }).map((_, index) => (
                 <View key={index} style={styles.sidebarSkeletonItem}>
                   <AppSkeleton width="72%" height={16} borderRadius={8} variant="activity" />
                   <AppSkeleton width="92%" height={12} borderRadius={8} variant="activity" />
@@ -1406,7 +1412,8 @@ export default function AICoachScreen() {
 
                 if (workoutPlan || mealPlan) {
                   const isLoadingWorkoutPlan = loadingWorkoutMessageId === message.id;
-                  const isLoadingMealPlan = loadingMealMessageId === message.id;
+                  const isAnyMealActionLoading = loadingMealAction !== null && loadingMealAction.startsWith(message.id);
+                  const isAllMealsLoading = loadingMealAction === `${message.id}-ALL`;
                   const showSharedPlanReply = Boolean(workoutPlan && mealPlan && message.content);
                   const showCardSubtitle = Boolean(message.content && !showSharedPlanReply);
 
@@ -1478,6 +1485,7 @@ export default function AICoachScreen() {
                               {mealPlan.meals.map((meal, index) => {
                                 const isLast = index === mealPlan.meals.length - 1;
                                 const macroText = `${Math.round(meal.calories)} kcal | P ${meal.protein}g | C ${meal.carbs}g | F ${meal.fat}g`;
+                                const isThisMealLoading = loadingMealAction === `${message.id}-${index}`;
 
                                 return (
                                   <View
@@ -1503,16 +1511,16 @@ export default function AICoachScreen() {
                                     <Pressable
                                       style={[
                                         styles.mealLogButton,
-                                        isLoadingMealPlan ? styles.mealLogButtonDisabled : null,
+                                        isAnyMealActionLoading ? styles.mealLogButtonDisabled : null,
                                       ]}
-                                      disabled={isLoadingMealPlan}
+                                      disabled={isAnyMealActionLoading}
                                       onPress={() => {
                                         handleLoadMealPlan(mealPlan, message.id, index).catch(() => {
                                           // handled in handleLoadMealPlan
                                         });
                                       }}
                                     >
-                                      {isLoadingMealPlan ? (
+                                      {isThisMealLoading ? (
                                         <ActivityIndicator size="small" color={appTheme.colors.primary} />
                                       ) : (
                                         <Text style={styles.mealLogButtonText}>Log</Text>
@@ -1525,14 +1533,14 @@ export default function AICoachScreen() {
 
                             <View style={styles.workoutCardFooter}>
                               <AppButton
-                                title={isLoadingMealPlan ? "Logging..." : "Log All Meals"}
+                                title={isAllMealsLoading ? "Logging..." : "Log All Meals"}
                                 onPress={() => {
                                   handleLoadMealPlan(mealPlan, message.id).catch(() => {
                                     // handled in handleLoadMealPlan
                                   });
                                 }}
-                                loading={isLoadingMealPlan}
-                                disabled={isLoadingMealPlan}
+                                loading={isAllMealsLoading}
+                                disabled={isAnyMealActionLoading}
                               />
                             </View>
                           </View>
