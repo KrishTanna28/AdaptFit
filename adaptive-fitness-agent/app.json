@@ -46,7 +46,6 @@
     },
     "android": {
       "package": "com.krish.adaptivefitnessagent",
-      "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.ACTIVITY_RECOGNITION",
         "android.permission.health.READ_STEPS",
