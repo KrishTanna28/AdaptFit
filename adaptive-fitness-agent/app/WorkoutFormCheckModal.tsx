@@ -1,12 +1,11 @@
 import React from "react";
-import { Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Platform, Pressable, Text, View } from "react-native";
 import { X } from "lucide-react-native";
 
 import AppButton from "../components/ui/AppButton";
 import AppTextField from "../components/ui/AppTextField";
 import { analyzeWorkoutForm, type FormAnalysisResponse } from "../services/formAnalysis";
 import {
-  estimateLiveReps,
   summarizePoseMetrics,
   type PoseFrameMetrics,
   type PoseMetricSummary,
@@ -30,12 +29,11 @@ export default function WorkoutFormCheckModal({
   const [step, setStep] = React.useState<FormCheckStep>("setup");
   const [exerciseName, setExerciseName] = React.useState("");
   const [isRecording, setIsRecording] = React.useState(false);
+  const [frameCount, setFrameCount] = React.useState(0);
   const [summary, setSummary] = React.useState<PoseMetricSummary | null>(null);
-  const [liveReps, setLiveReps] = React.useState(0);
   const [analysis, setAnalysis] = React.useState<FormAnalysisResponse | null>(null);
   const [isAnalyzing, setIsAnalyzing] = React.useState(false);
   const [errorText, setErrorText] = React.useState("");
-  const lastLiveRepsUpdateRef = React.useRef(0);
 
   React.useEffect(() => {
     if (!visible) {
@@ -43,8 +41,8 @@ export default function WorkoutFormCheckModal({
       setStep("setup");
       setExerciseName("");
       setIsRecording(false);
+      setFrameCount(0);
       setSummary(null);
-      setLiveReps(0);
       setAnalysis(null);
       setIsAnalyzing(false);
       setErrorText("");
@@ -69,20 +67,10 @@ export default function WorkoutFormCheckModal({
 
   const handleFrameMetrics = React.useCallback((metrics: PoseFrameMetrics) => {
     framesRef.current.push(metrics);
-
-    if (!isRecording) {
-      return;
+    if (framesRef.current.length % 6 === 0) {
+      setFrameCount(framesRef.current.length);
     }
-
-    const now = Date.now();
-    if (now - lastLiveRepsUpdateRef.current < 250) {
-      return;
-    }
-
-    lastLiveRepsUpdateRef.current = now;
-    const nextReps = estimateLiveReps(framesRef.current);
-    setLiveReps((prev) => Math.max(prev, nextReps));
-  }, [isRecording]);
+  }, []);
 
   const startRecording = () => {
     if (Platform.OS !== "android") {
@@ -92,11 +80,10 @@ export default function WorkoutFormCheckModal({
 
     framesRef.current = [];
     setSummary(null);
-    setLiveReps(0);
     setAnalysis(null);
+    setFrameCount(0);
     setErrorText("");
     setIsRecording(true);
-    lastLiveRepsUpdateRef.current = 0;
   };
 
   const stopRecording = async () => {
@@ -112,7 +99,6 @@ export default function WorkoutFormCheckModal({
 
     const nextSummary = summarizePoseMetrics(trimmedExerciseName, frames);
     setSummary(nextSummary);
-    setLiveReps((prev) => Math.max(prev, nextSummary.repsDetected));
     setIsAnalyzing(true);
     setErrorText("");
 
@@ -148,7 +134,7 @@ export default function WorkoutFormCheckModal({
           onPress={handleClose}
           style={styles.modalIconButton}
         >
-          <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
+          <X size={18} color={appTheme.colors.text} strokeWidth={2.2} />
         </Pressable>
       </View>
 
@@ -186,7 +172,7 @@ export default function WorkoutFormCheckModal({
           onPress={handleClose}
           style={styles.modalIconButton}
         >
-          <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
+          <X size={18} color={appTheme.colors.text} strokeWidth={2.2} />
         </Pressable>
       </View>
 
@@ -195,16 +181,6 @@ export default function WorkoutFormCheckModal({
         recording={isRecording}
         onFrameMetrics={handleFrameMetrics}
       />
-
-      <View style={styles.formStatsRow}>
-        <Text style={styles.entryMeta}>
-          {isRecording ? "Recording" : isAnalyzing ? "Analyzing" : "Ready"}
-        </Text>
-        <Text style={styles.entryMeta}>
-          Reps: {String(isRecording ? liveReps : summary?.repsDetected ?? liveReps)}
-        </Text>
-      </View>
-
       {errorText ? <Text style={styles.formErrorText}>{errorText}</Text> : null}
 
       <View style={styles.modalActions}>
@@ -238,7 +214,7 @@ export default function WorkoutFormCheckModal({
             onPress={handleClose}
             style={styles.modalIconButton}
           >
-            <X size={18} color={appTheme.colors.textSecondary} strokeWidth={2.2} />
+            <X size={18} color={appTheme.colors.text} strokeWidth={2.2} />
           </Pressable>
         </View>
 
@@ -251,19 +227,15 @@ export default function WorkoutFormCheckModal({
 
         {errorText ? <Text style={styles.formErrorText}>{errorText}</Text> : null}
 
-        <ScrollView
-          style={styles.formInsightsScroll}
-          contentContainerStyle={styles.formInsightsContent}
-          showsVerticalScrollIndicator
-        >
-          <Text style={styles.sectionTitle}>Aether insights</Text>
-          {insights.map((insight, index) => (
+        <View style={styles.block}>
+          <Text style={styles.sectionTitle}>Coach insights</Text>
+          {insights.slice(0, 4).map((insight, index) => (
             <View key={String(index)} style={styles.formInsightRow}>
               <Text style={styles.formInsightIndex}>{String(index + 1)}</Text>
               <Text style={styles.formInsightText}>{insight}</Text>
             </View>
           ))}
-        </ScrollView>
+        </View>
 
         <View style={styles.modalActions}>
           <AppButton title="Done" onPress={handleClose} />
@@ -272,8 +244,8 @@ export default function WorkoutFormCheckModal({
             variant="secondary"
             onPress={() => {
               framesRef.current = [];
+              setFrameCount(0);
               setSummary(null);
-              setLiveReps(0);
               setAnalysis(null);
               setErrorText("");
               setStep("camera");
