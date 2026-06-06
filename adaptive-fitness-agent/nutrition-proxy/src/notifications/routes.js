@@ -4,6 +4,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 
 import { getCoachFirestore, verifyCoachIdToken } from "../coach/firebaseAdmin.js";
 import { logger } from "../observability/logger.js";
+import { aggregateUserStepsForMidnight } from "../steps/aggregateSteps.js";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const DEFAULT_TIME_ZONE = "UTC";
@@ -580,6 +581,9 @@ async function generateDailySchedules({ force = false, source = "cron", now = ne
     const dateKey = localDateKey(now, timeZone);
     try {
       results.push(await createDailyScheduleForUser(db, userSnapshot, dateKey, timeZone, source));
+
+      // Run the step aggregation for the day that just ended (yesterday)
+      await aggregateUserStepsForMidnight(db, userSnapshot.id, dateKey);
     } catch (error) {
       logger.error(
         {

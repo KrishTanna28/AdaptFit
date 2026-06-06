@@ -1,3 +1,12 @@
+/**
+ * stepHistory.ts  (updated)
+ *
+ * loadStepsForRanges() now reads pre-aggregated Firestore docs for weekly,
+ * monthly, and yearly ranges. Daily ranges are unchanged.
+ *
+ * The aggregated docs are kept current by upsertDailyStepLog() in stepLog.ts.
+ */
+
 import { Pedometer } from "expo-sensors";
 import { getTodayDateKey } from "./helperFunctions";
 import {
@@ -5,6 +14,15 @@ import {
   upsertDailyStepLog,
   type DailyStepLog,
 } from "./stepLog";
+import {
+  loadWeeklyStepLogs,
+  loadMonthlyStepLogs,
+  loadYearlyStepLogs,
+  toWeekKey,
+  toMonthKey,
+  toYearKey,
+  type AggregatedStepLog,
+} from "./aggregatedStepLog";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -26,6 +44,8 @@ type LoadStepsOptions = {
   saveMissing?: boolean;
 };
 
+// ─── Date helpers (unchanged) ─────────────────────────────────────────────────
+
 function startOfDay(date: Date) {
   const next = new Date(date);
   next.setHours(0, 0, 0, 0);
@@ -36,16 +56,6 @@ function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
-}
-
-function buildDateKeysBetween(rangeStart: Date, rangeEnd: Date) {
-  const keys: string[] = [];
-  const start = startOfDay(rangeStart);
-  const end = startOfDay(rangeEnd);
-  for (let cursor = start; cursor < end; cursor = addDays(cursor, 1)) {
-    keys.push(getTodayDateKey(cursor));
-  }
-  return keys;
 }
 
 function getWeekStart(date: Date) {
@@ -68,6 +78,8 @@ function buildDayLabel(date: Date) {
   }).format(date);
 }
 
+// ─── Range builders ───────────────────────────────────────────────────────────
+
 export function buildDailyRanges(input: {
   endDate: Date;
   count: number;
@@ -81,16 +93,14 @@ export function buildDailyRanges(input: {
   for (let i = 0; i < count; i += 1) {
     const day = addDays(anchor, -i);
     const start = startOfDay(day);
-    const end = addDays(start, 1);
     ranges.push({
       key: getTodayDateKey(day),
       label: buildDayLabel(day),
       start,
-      end,
+      end: addDays(start, 1),
       target: Math.max(0, Math.round(dailyGoal)),
     });
   }
-
   return ranges;
 }
 
@@ -106,16 +116,14 @@ export function buildWeeklyRanges(input: {
 
   for (let i = 0; i < count; i += 1) {
     const start = addDays(anchorWeekStart, -(i * 7));
-    const end = addDays(start, 7);
     ranges.push({
-      key: getTodayDateKey(start),
+      key: toWeekKey(start),        // "YYYY-WNN" — matches the aggregated doc ID
       label: buildDayLabel(start),
       start,
-      end,
+      end: addDays(start, 7),
       target: Math.max(0, Math.round(dailyGoal)) * 7,
     });
   }
-
   return ranges;
 }
 
@@ -128,23 +136,22 @@ export function buildMonthlyRanges(input: {
   const { endDate, count, dailyGoal, offset = 0 } = input;
   const anchor = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
   anchor.setMonth(anchor.getMonth() - offset * count);
-
   const ranges: StepRange[] = [];
 
   for (let i = 0; i < count; i += 1) {
     const start = new Date(anchor.getFullYear(), anchor.getMonth() - i, 1);
     const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
-    const daysInMonth = Math.round((end.getTime() - start.getTime()) / MS_PER_DAY);
-
+    const daysInMonth = Math.round(
+      (end.getTime() - start.getTime()) / MS_PER_DAY,
+    );
     ranges.push({
-      key: getTodayDateKey(start),
+      key: toMonthKey(start),       // "YYYY-MM"
       label: buildDayLabel(start),
       start,
       end,
       target: Math.max(0, Math.round(dailyGoal)) * daysInMonth,
     });
   }
-
   return ranges;
 }
 
@@ -162,52 +169,120 @@ export function buildYearlyRanges(input: {
     const year = anchorYear - i;
     const start = new Date(year, 0, 1);
     const end = new Date(year + 1, 0, 1);
-    const daysInYear = Math.round((end.getTime() - start.getTime()) / MS_PER_DAY);
-
+    const daysInYear = Math.round(
+      (end.getTime() - start.getTime()) / MS_PER_DAY,
+    );
     ranges.push({
-      key: String(year),
+      key: toYearKey(start),        // "YYYY"
       label: String(year),
       start,
       end,
       target: Math.max(0, Math.round(dailyGoal)) * daysInYear,
     });
   }
-
   return ranges;
 }
+
+// ─── Granularity detection ────────────────────────────────────────────────────
+
+function detectGranularity(
+  ranges: StepRange[],
+): "daily" | "weekly" | "monthly" | "yearly" {
+  if (ranges.length === 0) return "daily";
+  const days = Math.round(
+    (ranges[0].end.getTime() - ranges[0].start.getTime()) / MS_PER_DAY,
+  );
+  if (days <= 1) return "daily";
+  if (days <= 7) return "weekly";
+  if (days <= 31) return "monthly";
+  return "yearly";
+}
+
+// ─── Aggregated → StepHistoryPoint ───────────────────────────────────────────
+
+function pointFromAggregatedLog(
+  range: StepRange,
+  log: AggregatedStepLog | undefined,
+  now: Date,
+): StepHistoryPoint {
+  const rangeEnd = range.end > now ? now : range.end;
+  const fullRangeDays = Math.max(
+    1,
+    Math.round((range.end.getTime() - range.start.getTime()) / MS_PER_DAY),
+  );
+  const targetDays = getEffectiveTargetDays(range.start, rangeEnd, now);
+  const dailyGoal = range.target / fullRangeDays;
+  // Fallback target: prorated to elapsed days (so in-progress periods
+  // show a fair target rather than the full-period goal)
+  const fallbackTarget = Math.max(0, Math.round(dailyGoal * targetDays));
+
+  const steps = log ? Math.max(0, log.steps) : 0;
+  // Prefer the stored goal (sum of per-day goals from real logs).
+  // Fall back to the computed target only when no logs exist yet.
+  const target = log && log.goal > 0 ? Math.max(0, log.goal) : fallbackTarget;
+
+  return { ...range, steps, target, isGoalMet: steps >= target };
+}
+
+// ─── Main loader ──────────────────────────────────────────────────────────────
 
 export async function loadStepsForRanges(
   ranges: StepRange[],
   options: LoadStepsOptions = {},
 ): Promise<StepHistoryPoint[]> {
   const now = new Date();
+
+  if (ranges.length === 0) return [];
+
+  const granularity = detectGranularity(ranges);
+
+  // ── Daily: pedometer + daily stepLogs (unchanged) ─────────────────────────
+  if (granularity === "daily") {
+    return loadDailyPoints(ranges, options, now);
+  }
+
+  // ── Weekly / Monthly / Yearly: read from pre-aggregated collections ────────
+  if (!options.uid) {
+    // No uid → can't hit Firestore; return zeroed points so chart renders empty
+    return ranges.map((range) => ({
+      ...range,
+      steps: 0,
+      isGoalMet: false,
+    }));
+  }
+
+  const keys = ranges.map((r) => r.key);
+  let logMap: Map<string, AggregatedStepLog>;
+
+  if (granularity === "weekly") {
+    logMap = await loadWeeklyStepLogs(options.uid, keys);
+  } else if (granularity === "monthly") {
+    logMap = await loadMonthlyStepLogs(options.uid, keys);
+  } else {
+    logMap = await loadYearlyStepLogs(options.uid, keys);
+  }
+
+  return ranges.map((range) =>
+    pointFromAggregatedLog(range, logMap.get(range.key), now),
+  );
+}
+
+// ─── Daily loader (extracted, unchanged logic) ────────────────────────────────
+
+async function loadDailyPoints(
+  ranges: StepRange[],
+  options: LoadStepsOptions,
+  now: Date,
+): Promise<StepHistoryPoint[]> {
   const savedLogsByKey: Record<string, DailyStepLog> = {};
 
   if (options.uid) {
-    const dateKeys = new Set<string>();
-
-    ranges.forEach((range) => {
-      const rangeEnd = range.end > now ? now : range.end;
-      const fullRangeDays = Math.max(
-        1,
-        Math.round((range.end.getTime() - range.start.getTime()) / MS_PER_DAY),
-      );
-      const isDailyRange = fullRangeDays === 1;
-
-      if (isDailyRange) {
-        dateKeys.add(range.key);
-        return;
-      }
-
-      buildDateKeysBetween(range.start, rangeEnd).forEach((key) => dateKeys.add(key));
-    });
-
-    const savedLogs = await loadDailyStepLogs(options.uid, Array.from(dateKeys));
-
+    const savedLogs = await loadDailyStepLogs(
+      options.uid,
+      ranges.map((r) => r.key),
+    );
     savedLogs.forEach((log) => {
-      if (log) {
-        savedLogsByKey[log.dateKey] = log;
-      }
+      if (log) savedLogsByKey[log.dateKey] = log;
     });
   }
 
@@ -216,73 +291,28 @@ export async function loadStepsForRanges(
       const rangeStart = range.start;
       const rangeEnd = range.end > now ? now : range.end;
       const targetDays = getEffectiveTargetDays(rangeStart, rangeEnd, now);
-      const fullRangeDays = Math.max(
-        1,
-        Math.round((range.end.getTime() - range.start.getTime()) / MS_PER_DAY),
+      const adjustedTarget = Math.max(
+        0,
+        Math.round(range.target * targetDays),
       );
-      const dailyGoal = range.target / fullRangeDays;
-      let adjustedTarget = Math.max(0, Math.round(dailyGoal * targetDays));
-      const isDailyRange = fullRangeDays === 1;
-      const savedLog =
-        options.uid && isDailyRange ? savedLogsByKey[range.key] : undefined;
+      const savedLog = options.uid ? savedLogsByKey[range.key] : undefined;
 
       if (savedLog) {
         const savedGoal = Math.max(0, Math.round(savedLog.goal));
-        if (savedGoal > 0) {
-          adjustedTarget = savedGoal;
-        }
-
+        const target = savedGoal > 0 ? savedGoal : adjustedTarget;
         const steps = Math.max(0, Math.round(savedLog.steps));
-        return {
-          ...range,
-          steps,
-          target: adjustedTarget,
-          isGoalMet: steps >= adjustedTarget,
-        };
+        return { ...range, steps, target, isGoalMet: steps >= target };
       }
 
       if (rangeEnd <= rangeStart) {
-        return {
-          ...range,
-          steps: 0,
-          target: adjustedTarget,
-          isGoalMet: false,
-        };
-      }
-
-      if (options.uid && !isDailyRange) {
-        const dateKeys = buildDateKeysBetween(rangeStart, rangeEnd);
-        let stepsSum = 0;
-        let targetSum = 0;
-        let hasLog = false;
-
-        dateKeys.forEach((key) => {
-          const log = savedLogsByKey[key];
-          if (log) {
-            hasLog = true;
-            stepsSum += Math.max(0, Math.round(log.steps));
-          }
-          const goalValue = log && log.goal > 0 ? log.goal : dailyGoal;
-          targetSum += Math.max(0, Math.round(goalValue));
-        });
-
-        if (hasLog) {
-          const steps = Math.max(0, Math.round(stepsSum));
-          const target = Math.max(0, Math.round(targetSum));
-          return {
-            ...range,
-            steps,
-            target,
-            isGoalMet: steps >= target,
-          };
-        }
+        return { ...range, steps: 0, target: adjustedTarget, isGoalMet: false };
       }
 
       try {
         const result = await Pedometer.getStepCountAsync(rangeStart, rangeEnd);
         const steps = Math.max(0, Math.round(result.steps));
 
-        if (options.uid && isDailyRange && options.saveMissing !== false) {
+        if (options.uid && options.saveMissing !== false) {
           await upsertDailyStepLog(options.uid, range.key, {
             steps,
             goal: adjustedTarget,

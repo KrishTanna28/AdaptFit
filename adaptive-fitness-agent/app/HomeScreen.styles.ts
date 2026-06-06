@@ -310,6 +310,7 @@ export const styles = StyleSheet.create({
   emptyText: {
     ...appTheme.typography.bodySmall,
     color: appTheme.colors.textSecondary,
+    textAlign: "center"
   },
   heroCard: {
     gap: appTheme.spacing.sm,
