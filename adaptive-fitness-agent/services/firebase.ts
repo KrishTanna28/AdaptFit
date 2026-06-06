@@ -16,17 +16,19 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
+const sanitizeKey = (key: string) => key.replace(/[^a-zA-Z0-9.\-_]/g, '-');
+
 const secureStorage = {
   async getItem(key: string): Promise<string | null> {
-    return await SecureStore.getItemAsync(key);
+    return await SecureStore.getItemAsync(sanitizeKey(key));
   },
 
   async setItem(key: string, value: string): Promise<void> {
-    await SecureStore.setItemAsync(key, value);
+    await SecureStore.setItemAsync(sanitizeKey(key), value);
   },
 
   async removeItem(key: string): Promise<void> {
-    await SecureStore.deleteItemAsync(key);
+    await SecureStore.deleteItemAsync(sanitizeKey(key));
   },
 };
 

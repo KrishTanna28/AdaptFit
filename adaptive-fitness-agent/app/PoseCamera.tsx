@@ -7,10 +7,11 @@ import {
   Text,
   View,
   requireNativeComponent,
+  UIManager,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { useCameraPermissions } from "expo-camera";
+import { useCameraPermissions, CameraView } from "expo-camera";
 
 import {
   extractPoseFrameMetrics,
@@ -45,8 +46,11 @@ type NativePoseCameraProps = {
   style?: StyleProp<ViewStyle>;
 };
 
+const isNativeViewAvailable =
+  Platform.OS === "android" && UIManager.getViewManagerConfig("PoseCameraView") != null;
+
 const NativePoseCameraView =
-  Platform.OS === "android"
+  isNativeViewAvailable
     ? requireNativeComponent<NativePoseCameraProps>("PoseCameraView")
     : null;
 
@@ -88,31 +92,21 @@ export default function PoseCamera({
   onFrameMetrics,
 }: PoseCameraProps) {
   const [permission, requestPermission] = useCameraPermissions();
-  const [hasRequestedPermission, setHasRequestedPermission] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [isCameraReady, setIsCameraReady] = useState(false);
 
-  const canUseNativeView = Platform.OS === "android" && NativePoseCameraView;
+  const canUseNativeView = isNativeViewAvailable && NativePoseCameraView;
 
   useEffect(() => {
-    if (!active) {
-      setIsCameraReady(false);
-      setHasRequestedPermission(false);
+    if (active) {
       setCameraError("");
-      return;
-    }
-
-    if (!permission?.granted && !hasRequestedPermission) {
-      setHasRequestedPermission(true);
-      void requestPermission();
-    }
-  }, [active, hasRequestedPermission, permission?.granted, requestPermission]);
-
-  useEffect(() => {
-    if (!active || !permission?.granted) {
+      if (!permission?.granted) {
+        void requestPermission();
+      }
+    } else {
       setIsCameraReady(false);
     }
-  }, [active, permission?.granted]);
+  }, [active, permission?.granted, requestPermission]);
 
   const handleCameraReady = useCallback(() => {
     setCameraError("");
@@ -171,14 +165,6 @@ export default function PoseCamera({
     return <View style={styles.formCameraPreview} />;
   }
 
-  if (!canUseNativeView) {
-    return (
-      <View style={styles.formCameraPlaceholder}>
-        <Text style={styles.emptyText}>Pose tracking is available on Android only.</Text>
-      </View>
-    );
-  }
-
   if (!permission?.granted) {
     return (
       <View style={styles.formCameraPlaceholder}>
@@ -187,10 +173,7 @@ export default function PoseCamera({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Allow camera permission"
-            onPress={() => {
-              setHasRequestedPermission(true);
-              void requestPermission();
-            }}
+            onPress={() => void requestPermission()}
             style={styles.addMealButton}
           >
             <Text style={styles.addMealText}>Allow Camera</Text>
@@ -206,6 +189,20 @@ export default function PoseCamera({
     return (
       <View style={styles.formCameraPlaceholder}>
         <Text style={styles.emptyText}>{cameraError}</Text>
+      </View>
+    );
+  }
+
+  if (!canUseNativeView) {
+    return (
+      <View style={styles.formCameraPreview}>
+        <CameraView 
+          key={`fallback-camera-${active ? "on" : "off"}`}
+          style={nativeCameraStyles.camera} 
+          facing="front" 
+          active={active}
+          onMountError={(e) => setCameraError(e.message || "Failed to open camera.")}
+        />
       </View>
     );
   }
