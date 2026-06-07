@@ -7,7 +7,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "food-detector": "powershell -ExecutionPolicy Bypass -File ./food-detector/start.ps1"
+    "food-detector": "powershell -ExecutionPolicy Bypass -File ./food-detector/start.ps1",
+    "postinstall": "node scripts/patch-rn-gradle.js"
   },
   "dependencies": {
     "@microsoft/fetch-event-source": "^2.0.1",
