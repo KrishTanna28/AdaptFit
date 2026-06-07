@@ -5,7 +5,6 @@
     "scheme": "adaptivefitnessagent",
     "plugins": [
       "@react-native-google-signin/google-signin",
-      "expo-health-connect",
       "expo-notifications",
       [
         "expo-camera",
