@@ -1,4 +1,13 @@
-android/.gradle/
-android/build/
-android/app/build/
-node_modules/
+node_modules
+android/.cxx
+android/build
+android/app/build
+android/app/.cxx
+ios/build
+ios/Pods
+.expo
+.git
+*.log
+*.map
+**/__tests__
+**/coverage
