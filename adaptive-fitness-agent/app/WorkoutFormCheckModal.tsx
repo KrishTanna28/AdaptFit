@@ -1,6 +1,7 @@
 import React from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import { X } from "lucide-react-native";
+import { useCameraPermissions } from "expo-camera";
 
 import AppButton from "../components/ui/AppButton";
 import AppTextField from "../components/ui/AppTextField";
@@ -25,6 +26,7 @@ export default function WorkoutFormCheckModal({
   visible,
   onClose,
 }: WorkoutFormCheckModalProps) {
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const framesRef = React.useRef<PoseFrameMetrics[]>([]);
   const [step, setStep] = React.useState<FormCheckStep>("setup");
   const [exerciseName, setExerciseName] = React.useState("");
@@ -56,11 +58,20 @@ export default function WorkoutFormCheckModal({
     onClose();
   };
 
-  const openCamera = () => {
+  const openCamera = async () => {
     if (trimmedExerciseName.length < 2) {
       setErrorText("Type the exercise name first.");
       return;
     }
+
+    if (!cameraPermission?.granted) {
+      const result = await requestCameraPermission();
+      if (!result.granted) {
+        setErrorText("Camera permission is required to analyze your form.");
+        return;
+      }
+    }
+
     setErrorText("");
     setStep("camera");
   };

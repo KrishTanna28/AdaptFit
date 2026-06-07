@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp } from 'firebase/app';
 import { initializeAuth, getReactNativePersistence } from 'firebase/auth/react-native';
 import { getFirestore } from 'firebase/firestore';
@@ -16,24 +16,8 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-const sanitizeKey = (key: string) => key.replace(/[^a-zA-Z0-9.\-_]/g, '-');
-
-const secureStorage = {
-  async getItem(key: string): Promise<string | null> {
-    return await SecureStore.getItemAsync(sanitizeKey(key));
-  },
-
-  async setItem(key: string, value: string): Promise<void> {
-    await SecureStore.setItemAsync(sanitizeKey(key), value);
-  },
-
-  async removeItem(key: string): Promise<void> {
-    await SecureStore.deleteItemAsync(sanitizeKey(key));
-  },
-};
-
 export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(secureStorage),
+  persistence: getReactNativePersistence(AsyncStorage),
 });
 
 export const db = getFirestore(app);

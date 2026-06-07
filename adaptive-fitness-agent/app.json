@@ -22,7 +22,8 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-audio"
     ],
     "version": "1.0.0",
     "orientation": "portrait",
@@ -33,16 +34,6 @@
       "image": "./assets/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#050505"
-    },
-    "ios": {
-      "googleServicesFile": "./GoogleService-Info.plist",
-      "infoPlist": {
-        "NSMotionUsageDescription": "This app uses motion data to count your steps in real time.",
-        "NSMicrophoneUsageDescription": "This app uses the microphone so you can dictate messages to Aether.",
-        "NSCameraUsageDescription": "This app uses the camera to analyze workout form and capture plate photos for food logging."
-      },
-      "supportsTablet": true,
-      "bundleIdentifier": "com.krish.adaptivefitnessagent"
     },
     "android": {
       "package": "com.krish.adaptivefitnessagent",

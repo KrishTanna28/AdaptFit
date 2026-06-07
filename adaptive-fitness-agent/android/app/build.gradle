@@ -108,6 +108,8 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            minifyEnabled false      // ensure this is false
+            shrinkResources false    // ensure this is false
         }
         release {
             // Caution! In production, you need to generate your own keystore file.
@@ -192,6 +194,14 @@ dependencies {
     implementation "androidx.camera:camera-lifecycle:${camerax_version}"
     implementation "androidx.camera:camera-view:${camerax_version}"
 
+}
+
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force "expo.modules.kotlin:expo-modules-core:3.0.30"
+        }
+    }
 }
 
 apply plugin: 'com.google.gms.google-services'

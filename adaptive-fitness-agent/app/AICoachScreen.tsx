@@ -16,7 +16,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as FileSystem from "expo-file-system/legacy";
-import { Audio } from "expo-av";
+import { AudioModule, useAudioRecorder, RecordingPresets } from "expo-audio";
 import * as Speech from "expo-speech";
 import {
   Menu,
@@ -410,7 +410,7 @@ export default function AICoachScreen() {
   const { user } = useAuthUser();
   const navigation = useNavigation<BottomTabNavigationProp<HomeTabParamList>>();
   const chatScrollRef = useRef<ScrollView | null>(null);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const coachAbortControllerRef = useRef<AbortController | null>(null);
   const coachRequestIdRef = useRef(0);
   const stoppedCoachRequestIdsRef = useRef<Set<number>>(new Set());
@@ -442,12 +442,6 @@ export default function AICoachScreen() {
 
   useEffect(() => {
     return () => {
-      const recording = recordingRef.current;
-      if (recording) {
-        recording.stopAndUnloadAsync().catch(() => {
-          // ignore cleanup errors
-        });
-      }
       Speech.stop();
       coachAbortControllerRef.current?.abort();
     };
@@ -741,7 +735,7 @@ export default function AICoachScreen() {
     }
 
     try {
-      const permission = await Audio.requestPermissionsAsync();
+      const permission = await AudioModule.requestRecordingPermissionsAsync();
       if (!permission.granted) {
         showAlert({
           title: "Microphone permission needed",
@@ -750,16 +744,7 @@ export default function AICoachScreen() {
         return;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
-
-      recordingRef.current = recording;
+      audioRecorder.record();
       setIsRecording(true);
     } catch (error) {
       showAlert({
@@ -770,9 +755,7 @@ export default function AICoachScreen() {
   };
 
   const stopRecordingAndTranscribe = async () => {
-    const activeRecording = recordingRef.current;
-    if (!activeRecording) {
-      setIsRecording(false);
+    if (!isRecording) {
       return;
     }
 
@@ -780,9 +763,8 @@ export default function AICoachScreen() {
     setIsTranscribing(true);
 
     try {
-      await activeRecording.stopAndUnloadAsync();
-      const uri = activeRecording.getURI();
-      recordingRef.current = null;
+      audioRecorder.stop();
+      const uri = audioRecorder.uri;
 
       if (!uri) {
         throw new Error("No audio captured for transcription.");
@@ -814,9 +796,6 @@ export default function AICoachScreen() {
       });
     } finally {
       setIsTranscribing(false);
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false }).catch(() => {
-        // ignore cleanup errors
-      });
     }
   };
 

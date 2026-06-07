@@ -201,7 +201,6 @@ class PoseCameraView(private val reactContext: ThemedReactContext) : FrameLayout
     poseProcessor?.close()
     poseProcessor = null
     previewImageView.setImageBitmap(null)
-    lastPreviewBitmap?.recycle()
     lastPreviewBitmap = null
   }
 
@@ -276,10 +275,8 @@ class PoseCameraView(private val reactContext: ThemedReactContext) : FrameLayout
     }
 
     previewImageView.post {
-      val previous = lastPreviewBitmap
       lastPreviewBitmap = displayBitmap
       previewImageView.setImageBitmap(displayBitmap)
-      previous?.recycle()
     }
   }
 
@@ -326,8 +323,9 @@ class PoseCameraView(private val reactContext: ThemedReactContext) : FrameLayout
     if (id == 0) return
 
     UiThreadUtil.runOnUiThread {
-      val emitter = reactContext.getJSModule(RCTEventEmitter::class.java)
-      emitter.receiveEvent(id, name, payload)
+        reactContext
+            .getJSModule(com.facebook.react.uimanager.events.RCTEventEmitter::class.java)
+            ?.receiveEvent(id, name, payload)
     }
-  }
+}
 }
