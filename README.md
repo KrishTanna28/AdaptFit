@@ -34,24 +34,23 @@ AdaptFit is a full-stack mobile application that combines **AI coaching**, **nut
 
 ## Features
 
-### 🏠 Home Dashboard
+### Home Dashboard
 - **Daily summary cards** — calories consumed, macros, workouts completed, and steps walked at a glance.
 - **AI Coach Insights** — Aether generates a daily personalized insight card based on recent nutrition, workout, step, sleep, and hydration data.
 - **Live step counter** — real-time pedometer integration via Android Health Connect and device sensors, with daily/weekly/monthly/yearly history charts.
 - **Step goal management** — configurable daily step goals synced to Firestore.
 
-### 🧠 Aether — AI Coach
+### Aether — AI Coach
 - **Conversational AI chat** powered by Google Gemini with full streaming (SSE) support.
 - **Context-aware** — Aether reads your workout logs, nutrition entries, step history, sleep, hydration, and profile data to give grounded advice.
 - **Workout plan generation** — structured workout plans with exercises, sets, and reps, rendered as interactive cards.
 - **Meal plan generation** — full meal plans with per-meal macro and micronutrient breakdowns.
 - **Voice input** — record audio messages that are transcribed by Gemini and sent as chat input.
-- **File attachments** — attach text content or documents for the coach to analyze.
 - **Multi-conversation support** — create, switch between, and delete independent chat threads.
 - **Tool use** — the coach can invoke backend tools to log workouts, meals, and more on your behalf.
 - **Intelligence events** — every write (workout, meal, hydration, sleep, profile) publishes an event that feeds the coach's context engine.
 
-### 🍕 Nutrition Tracking
+### Nutrition Tracking
 - **Food search** — search the USDA FoodData Central and Open Food Facts databases simultaneously, with results merged and ranked.
 - **Barcode scanning** — scan product barcodes via the device camera to instantly look up nutritional information.
 - **Plate food analysis** — photograph your plate and let Gemini Vision + Google Cloud Vision identify individual food items, estimate portions, and calculate per-item and total macros/micros.
@@ -59,27 +58,27 @@ AdaptFit is a full-stack mobile application that combines **AI coaching**, **nut
 - **Daily nutrition history** — browse past days with a date picker and calendar view.
 - **Manual entry** — add custom foods with manual nutrient input.
 
-### 🏋️ Workout Tracking
+### Workout Tracking
 - **Workout catalog search** — search a comprehensive exercise database with MET (Metabolic Equivalent of Task) values for accurate calorie estimation.
 - **MET-based calorie calculation** — automatic calorie burn estimation using MET values, user body weight, and workout duration.
 - **Workout form check** — record exercise movements, extract pose metrics on-device, and send them to Gemini for AI-powered form analysis and technique feedback.
 - **Workout logging** — log workouts with exercise name, duration, calories, and optional notes.
 - **Calendar view** — visualize workout history on a monthly calendar.
 
-### 👤 Profile & Settings
+### Profile & Settings
 - **User profile** — name, age, gender, height, weight, and fitness goals.
 - **Profile editing** — update personal data with changes synced to Firestore and published as intelligence events.
 - **Google Sign-In** — authenticate with Google via `@react-native-google-signin`.
 - **Email + OTP Sign-Up** — custom email registration flow with server-side OTP verification via SMTP and branded emails.
 - **Password setup** — post-registration password configuration for email-based accounts.
 
-### 🔔 Push Notifications
+### Push Notifications
 - **Expo push notifications** — server-side scheduled push notifications via a cron system.
 - **Smart scheduling** — configurable daily send count (3–5) with minimum gap enforcement (180–240 min) to avoid notification fatigue.
 - **Token registration** — automatic push token registration with timezone and device metadata.
 - **Android notification channels** — dedicated "Daily progress" notification channel.
 
-### 📊 Intelligence & Analytics
+### Intelligence & Analytics
 - **Event-driven architecture** — BullMQ job queues process intelligence events asynchronously.
 - **Signal engine** — deterministic scoring modules compute user signal packets (trends, states, decisions) from raw data.
 - **State machine classification** — XState-based coaching state machines for structured behavioral transitions.
@@ -92,43 +91,43 @@ AdaptFit is a full-stack mobile application that combines **AI coaching**, **nut
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    React Native App (Expo)                   │
-│  ┌──────┐ ┌─────────┐ ┌───────────┐ ┌───────┐ ┌─────────┐ │
-│  │ Home │ │ Workout │ │ Nutrition │ │Aether │ │ Profile │ │
-│  └──┬───┘ └────┬────┘ └─────┬─────┘ └───┬───┘ └────┬────┘ │
+│                    React Native App (Expo)                  │
+│  ┌──────┐ ┌─────────┐ ┌───────────┐ ┌───────┐ ┌─────────┐   │
+│  │ Home │ │ Workout │ │ Nutrition │ │Aether │ │ Profile │   │
+│  └──┬───┘ └────┬────┘ └─────┬─────┘ └───┬───┘ └────┬────┘   │
 │     │          │            │            │          │       │
 │     └──────────┴────────────┴────────────┴──────────┘       │
-│                          │                                   │
-│               services/ (API clients)                        │
+│                          │                                  │
+│               services/ (API clients)                       │
 │     ┌────────────────────┼───────────────────────┐          │
-│     │  aiCoach.ts        │  nutritionApi.ts       │          │
-│     │  formAnalysis.ts   │  workoutLog.ts         │          │
-│     │  stepLog.ts        │  pushNotifications.ts  │          │
+│     │  aiCoach.ts        │  nutritionApi.ts      │          │
+│     │  formAnalysis.ts   │  workoutLog.ts        │          │
+│     │  stepLog.ts        │  pushNotifications.ts │          │
 │     └────────────────────┼───────────────────────┘          │
 └──────────────────────────┼──────────────────────────────────┘
                            │ HTTP / SSE
 ┌──────────────────────────┼──────────────────────────────────┐
-│               nutrition-proxy (Express.js)                   │
-│                          │                                   │
+│               nutrition-proxy (Express.js)                  │
+│                          │                                  │
 │  ┌───────────────────────┼────────────────────────────┐     │
-│  │  server.js  ─── Nutrition search, plate analysis    │     │
-│  │  coach/     ─── AI chat, streaming, conversations   │     │
-│  │  ai/        ─── Intent routing, prompt compression  │     │
-│  │  intelligence/ ── Signal engine, state machines     │     │
-│  │  events/    ─── Event bus + BullMQ publishing       │     │
-│  │  queues/    ─── BullMQ workers for async processing │     │
-│  │  auth/      ─── Email OTP verification              │     │
-│  │  formAnalysis/ ─ Workout form analysis              │     │
-│  │  home/      ─── Home insights API                   │     │
-│  │  notifications/ ── Push notification cron           │     │
-│  │  observability/ ── Pino logger + Prometheus metrics │     │
-│  │  schemas/   ─── Zod validation contracts            │     │
-│  │  cache/     ─── Redis + in-memory LRU cache         │     │
+│  │  server.js  ─── Nutrition search, plate analysis   │     │
+│  │  coach/     ─── AI chat, streaming, conversations  │     │
+│  │  ai/        ─── Intent routing, prompt compression │     │
+│  │  intelligence/ ── Signal engine, state machines    │     │
+│  │  events/    ─── Event bus + BullMQ publishing      │     │
+│  │  queues/    ─── BullMQ workers for async processing│     │
+│  │  auth/      ─── Email OTP verification             │     │
+│  │  formAnalysis/ ─ Workout form analysis             │     │
+│  │  home/      ─── Home insights API                  │     │
+│  │  notifications/ ── Push notification cron          │     │
+│  │  observability/ ── Pino logger + Prometheus metrics│     │
+│  │  schemas/   ─── Zod validation contracts           │     │
+│  │  cache/     ─── Redis + in-memory LRU cache        │     │
 │  └────────────────────────────────────────────────────┘     │
-│                          │                                   │
+│                          │                                  │
 │           ┌──────────────┼──────────────┐                   │
-│           ▼              ▼              ▼                    │
-│      Firebase       Redis/BullMQ    Google APIs              │
+│           ▼              ▼              ▼                   │
+│      Firebase       Redis/BullMQ    Google APIs             │
 │   (Auth+Firestore)   (Cache+Queue)  (Gemini, Vision)        │
 └─────────────────────────────────────────────────────────────┘
 ```
